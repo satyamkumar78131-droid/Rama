@@ -16,7 +16,9 @@ from security import get_api_key
 from web_search import web_search
 
 
-MODEL = "gemini-2.0-flash"
+
+MODEL = "gemini-3.8-flash"
+
 
 
 SYSTEM_PROMPT = """
