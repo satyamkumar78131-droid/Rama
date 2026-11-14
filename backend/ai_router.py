@@ -1,874 +1,247 @@
+"""Rama — AI router (SAIME wala proven flow).
 
+Order (hamesha yahi):
+1. Naam wale sawal — "tumhara naam kya hai" -> "Main Rama hoon";
+   "mera naam kya hai" -> user_name memory se. Kabhi web search nahi.
+2. Personal memory pehle — saved memory jawab de (>= 2 content words
+   overlap) to web search BILKUL nahi.
+3. Current/factual sawal — web_search + sources.
+4. Warna Gemini (gemini-2.0-flash) — step by step, facts invent nahi karta.
+5. Gemini na ho / fail ho — web search ya imaandaar "nahi pata".
+
+Jawab me kabhi HTML entities (&#x27;) ya citation markers ([1], [12]) nahi aate.
+Har external call try/except me hai — kuch bhi crash nahi karta.
 """
-RAMA AI ROUTER — COMPLETE UPGRADED VERSION
-==========================================
-
-Features:
-1. RAMA AI name detection
-2. User name detection from memory
-3. Personal memory search
-4. Current information via web search
-5. Gemini 3.8 Flash primary model
-6. Gemini 3.5 Flash-Lite backup model
-7. Automatic retry and error handling
-8. Fast and Deep modes
-9. Hindi, Hinglish and English
-10. Conversation history
-11. Natural greeting responses
-12. Detailed error logging
-13. Safe fallback responses
-14. HTML entity and citation cleanup
-"""
-
 import re
-import time
-import logging
-
-# =====================================================
-# LOGGING
-# =====================================================
-
-logger = logging.getLogger("rama.ai")
-
-# =====================================================
-# GEMINI SDK
-# =====================================================
 
 try:
     from google import genai
-except Exception:
+except Exception:  # google-genai install na ho to bhi app chalegi
     genai = None
 
-# =====================================================
-# INTERNAL MODULES
-# =====================================================
-
-from memory import (
-    content_words,
-    get_memory,
-    search_memories
-)
-
+from memory import content_words, get_memory, search_memories
 from security import get_api_key
 from web_search import web_search
 
-# =====================================================
-# MODEL CONFIGURATION
-# =====================================================
+MODEL = "gemini-2.0-flash"
 
-MODEL = "gemini-3.8-flash"
+SYSTEM_PROMPT = (
+    "You are Rama, a helpful AI assistant. "
+    "Think step by step. "
+    "Never invent facts, citations, URLs or statistics. "
+    "If you do not know, say so honestly."
+)
 
-FALLBACK_MODEL = "gemini-3.5-flash-lite"
+# Fast mode: seedha, short jawab. Deep mode: step-by-step detail reasoning.
+FAST_PROMPT = SYSTEM_PROMPT + " Give a short, direct answer."
+DEEP_PROMPT = (
+    "You are Rama, a helpful AI assistant. "
+    "Think step by step and explain in detail: break the problem into parts, "
+    "show your reasoning, then give the final answer with examples where useful. "
+    "Never invent facts, citations, URLs or statistics. "
+    "If you do not know, say so honestly."
+)
 
-MAX_RETRIES = 2
-
-RETRY_DELAY = 1.5
-
-# Temporary errors that may succeed on retry
-RETRYABLE_ERRORS = {
-    429,
-    500,
-    502,
-    503,
-    504
-}
-
-# =====================================================
-# SYSTEM PROMPTS
-# =====================================================
-
-SYSTEM_PROMPT = """
-You are RAMA, a helpful personal AI assistant.
-
-PERSONALITY:
-- Friendly, intelligent and professional.
-- Speak naturally and conversationally.
-- Support Hindi, Hinglish and English.
-- Understand conversation context.
-- Give accurate and useful answers.
-- Never invent facts, sources or statistics.
-- If you do not know, say so honestly.
-- Avoid unnecessary introductions.
-- Do not introduce yourself unless asked.
-- Answer greetings naturally.
-- Keep simple answers short.
-- Use clear formatting when helpful.
-
-ACCURACY:
-- Never pretend to have searched the web.
-- Never invent URLs or citations.
-- Distinguish facts from uncertainty.
-- Correct mistakes when identified.
-- Use conversation history when relevant.
-"""
-
-FAST_PROMPT = SYSTEM_PROMPT + """
-
-FAST MODE:
-- Give direct and concise answers.
-- Avoid unnecessary explanations.
-- Prioritize useful information.
-- Use simple language.
-"""
-
-DEEP_PROMPT = SYSTEM_PROMPT + """
-
-DEEP MODE:
-- Analyze the question carefully.
-- Explain important steps and concepts.
-- Provide examples where useful.
-- Organize answers using headings.
-- Explain conclusions clearly.
-- Do not reveal private internal reasoning.
-"""
-
-# =====================================================
-# CURRENT INFORMATION KEYWORDS
-# =====================================================
-
+# Aise sawal jinhe current/factual info chahiye (web search karo)
 FRESH_WORDS = {
-    "aaj",
-    "kal",
-    "abhi",
-    "latest",
-    "news",
-    "khabar",
-    "mausam",
-    "weather",
-    "price",
-    "rate",
-    "kimat",
-    "bhav",
-    "score",
-    "result",
-    "parinam",
-    "kab",
-    "when",
-    "kahan",
-    "where",
-    "kitne",
-    "capital",
-    "rajdhani",
-    "population",
-    "aabadi",
-    "president",
-    "pm",
-    "today",
-    "current",
-    "live",
-    "is samay",
-    "latest update",
-    "election",
-    "stock",
-    "share price"
+    "aaj", "kal", "abhi", "latest", "news", "khabar", "mausam", "weather",
+    "price", "rate", "kimat", "bhav", "score", "result", "parinam",
+    "kaun", "who", "kab", "when", "kahan", "where", "kitne", "how many",
+    "capital", "rajdhani", "population", "aabadi", "president", "pm",
+    "today", "current", "live", "abhi ka", "is samay",
 }
 
-# =====================================================
-# TEXT CLEANER
-# =====================================================
 
 def _clean_answer(text: str) -> str:
-
+    """HTML entities aur citation markers hatao."""
     if not text:
         return ""
-
-    text = str(text)
-
-    # HTML entities
-    text = re.sub(
-        r"&#(?:x[0-9a-fA-F]+|\d+);",
-        "",
-        text
-    )
-
-    replacements = {
-        "&amp;": "&",
-        "&lt;": "<",
-        "&gt;": ">",
-        "&quot;": '"',
-        "&#39;": "'",
-        "&nbsp;": " "
-    }
-
-    for old, new in replacements.items():
-        text = text.replace(old, new)
-
-    # Citation markers
-    text = re.sub(
-        r"\[\d+\]",
-        "",
-        text
-    )
-
-    # Excessive blank lines
-    text = re.sub(
-        r"\n{3,}",
-        "\n\n",
-        text
-    )
-
+    text = re.sub(r"&#\w+;", "", text)
+    text = text.replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
+    text = text.replace("&quot;", '"').replace("&#39;", "'").replace("&nbsp;", " ")
+    text = re.sub(r"\[\d+\]", "", text)  # [1], [12] jaise citations
+    text = re.sub(r"\n{3,}", "\n\n", text)
     return text.strip()
 
 
-# =====================================================
-# NAME DETECTION
-# =====================================================
-
 def _is_user_name_question(question: str) -> bool:
-
-    low = question.lower().strip()
-
-    patterns = [
-        r"mera\s+naa?m\s+kya",
-        r"what\s+is\s+my\s+name",
-        r"what'?s\s+my\s+name",
-        r"do\s+you\s+know\s+my\s+name"
-    ]
-
-    return any(
-        re.search(pattern, low)
-        for pattern in patterns
+    """User apna naam poochh raha hai? ("mera naam kya hai" / "what is my name")"""
+    low = question.lower()
+    return bool(
+        re.search(r"mera\s+naa?m\s+kya", low)
+        or re.search(r"what\s+is\s+my\s+name", low)
+        or re.search(r"what'?s\s+my\s+name", low)
     )
 
 
 def _is_ai_name_question(question: str) -> bool:
-
-    low = question.lower().strip()
-
-    patterns = [
-        r"tumhara\s+naa?m\s+kya",
-        r"aapka\s+naa?m\s+kya",
-        r"what\s+is\s+your\s+name",
-        r"what'?s\s+your\s+name",
-        r"who\s+are\s+you",
-        r"tum\s+kon\s+ho",
-        r"tum\s+kaun\s+ho",
-        r"aap\s+kaun\s+hain",
-        r"your\s+name"
-    ]
-
-    return any(
-        re.search(pattern, low)
-        for pattern in patterns
+    """AI ka naam poochh raha hai? ("tumhara naam kya hai" / "what is your name")"""
+    low = question.lower()
+    return bool(
+        re.search(r"tumhara\s+naa?m\s+kya", low)
+        or re.search(r"aapka\s+naa?m\s+kya", low)
+        or re.search(r"what\s+is\s+your\s+name", low)
+        or re.search(r"what'?s\s+your\s+name", low)
     )
 
 
-# =====================================================
-# GREETING DETECTION
-# =====================================================
-
 def _is_greeting(question: str) -> bool:
-
-    low = re.sub(
-        r"[^\w\s]",
-        "",
-        question.lower()
-    ).strip()
-
+    """Natural greeting? ("hello" / "hi" / "namaste" — poora message greeting ho)."""
+    low = re.sub(r"[^\w\s]", "", question.lower()).strip()
     greetings = {
-        "hi",
-        "hii",
-        "hello",
-        "helo",
-        "hey",
-        "hlo",
-        "namaste",
-        "namaskar",
-        "good morning",
-        "good afternoon",
-        "good evening",
-        "salam"
+        "hi", "hii", "hello", "helo", "hey", "hlo",
+        "namaste", "namaskar", "namaste ji",
+        "good morning", "good afternoon", "good evening",
+        "salam", "salaam", "ram ram", "radhe radhe",
     }
-
     return low in greetings
 
 
-# =====================================================
-# FRESH INFORMATION DETECTION
-# =====================================================
-
 def _needs_fresh_info(question: str) -> bool:
-
+    """Sawal ko current/factual info chahiye?"""
     low = question.lower()
-
-    words = set(
-        re.findall(
-            r"[a-zA-Z\u0900-\u097F]+",
-            low
-        )
-    )
-
+    words = set(re.findall(r"[a-zA-Z\u0900-\u097F]+", low))
     if words & FRESH_WORDS:
         return True
+    if re.search(r"\b(kya hai|what is|who is|kaun hai|capital|rajdhani)\b", low):
+        return True
+    return False
 
-    patterns = [
-        r"\bkya hai\b",
-        r"\bwhat is\b",
-        r"\bwho is\b",
-        r"\bwho was\b",
-        r"\bkaun hai\b",
-        r"\bkaun tha\b",
-        r"\bhow many\b",
-        r"\bhow much\b",
-        r"\bcapital\b",
-        r"\brajdhani\b",
-        r"\bkitna hai\b",
-        r"\bkitni hai\b"
-    ]
-
-    return any(
-        re.search(pattern, low)
-        for pattern in patterns
-    )
-
-
-# =====================================================
-# MAIN AI ROUTER
-# =====================================================
 
 class AIRouter:
-
     def __init__(self):
-
         self._client = None
 
-        logger.info(
-            "RAMA AI Router initialized."
-        )
-
-    # =================================================
-    # GEMINI CLIENT
-    # =================================================
-
     def _get_client(self):
-
+        """Gemini client (lazy — key ho to hi banao)."""
         if genai is None:
-
-            logger.error(
-                "Google GenAI SDK is missing."
-            )
-
             return None
-
         if self._client is None:
-
-            try:
-
-                key = get_api_key()
-
-                if not key:
-
-                    logger.error(
-                        "GEMINI_API_KEY is missing or empty."
-                    )
-
-                    return None
-
-                self._client = genai.Client(
-                    api_key=key
-                )
-
-                logger.info(
-                    "Gemini client initialized."
-                )
-
-            except Exception:
-
-                logger.exception(
-                    "Gemini client initialization failed."
-                )
-
+            key = get_api_key()
+            if not key:
                 return None
-
+            try:
+                self._client = genai.Client(api_key=key)
+            except Exception:
+                return None
         return self._client
 
-    # =================================================
-    # EXTRACT ERROR STATUS
-    # =================================================
-
-    def _get_error_status(self, exc):
-
-        status = (
-            getattr(exc, "code", None)
-            or getattr(exc, "status_code", None)
-        )
-
-        try:
-
-            if status is not None:
-                return int(status)
-
-        except (TypeError, ValueError):
-            pass
-
-        message = str(exc)
-
-        match = re.search(
-            r"\b(400|401|403|404|408|429|500|502|503|504)\b",
-            message
-        )
-
-        if match:
-            return int(match.group(1))
-
-        return None
-
-    # =================================================
-    # GEMINI REQUEST WITH RETRY + BACKUP
-    # =================================================
-
     def _ask_gemini(self, prompt: str):
-
+        """Gemini se jawab lo; fail ho to None."""
         client = self._get_client()
-
         if client is None:
             return None
-
-        models = [
-            MODEL,
-            FALLBACK_MODEL
-        ]
-
-        for model in models:
-
-            for attempt in range(MAX_RETRIES):
-
-                try:
-
-                    logger.info(
-                        "Requesting Gemini model: %s",
-                        model
-                    )
-
-                    response = client.models.generate_content(
-                        model=model,
-                        contents=prompt
-                    )
-
-                    answer = (
-                        response.text or ""
-                    ).strip()
-
-                    if answer:
-
-                        logger.info(
-                            "Gemini response successful: %s",
-                            model
-                        )
-
-                        return answer
-
-                    logger.warning(
-                        "Gemini returned empty response: %s",
-                        model
-                    )
-
-                    break
-
-                except Exception as exc:
-
-                    status = self._get_error_status(
-                        exc
-                    )
-
-                    logger.warning(
-                        "Gemini request failed. "
-                        "Model=%s Status=%s Attempt=%s Error=%s",
-                        model,
-                        status,
-                        attempt + 1,
-                        str(exc)
-                    )
-
-                    # Authentication errors cannot be fixed
-                    # by switching models.
-                    if status in (400, 401, 403):
-                        return None
-
-                    # Retry temporary errors
-                    if (
-                        status in RETRYABLE_ERRORS
-                        and attempt < MAX_RETRIES - 1
-                    ):
-
-                        delay = (
-                            RETRY_DELAY * (2 ** attempt)
-                        )
-
-                        logger.info(
-                            "Retrying %s after %.1f seconds.",
-                            model,
-                            delay
-                        )
-
-                        time.sleep(delay)
-
-                        continue
-
-                    # Try backup model
-                    break
-
-        logger.error(
-            "Primary and backup Gemini models failed."
-        )
-
-        return None
-
-    # =================================================
-    # WEB SEARCH
-    # =================================================
-
-    def _search_web(self, question: str):
-
         try:
-
-            results = web_search(question)
-
-            if not results:
-                return []
-
-            if not isinstance(results, list):
-                return []
-
-            return results
-
+            resp = client.models.generate_content(
+                model=MODEL,
+                contents=prompt,
+            )
+            text = (resp.text or "").strip()
+            return text if text else None
         except Exception:
+            return None
 
-            logger.exception(
-                "Web search failed."
-            )
-
-            return []
-
-    # =================================================
-    # PREPARE WEB CONTEXT
-    # =================================================
-
-    def _prepare_web_context(self, sources):
-
-        lines = []
-
-        for result in sources[:5]:
-
-            if not isinstance(result, dict):
-                continue
-
-            title = result.get(
-                "title",
-                ""
-            )
-
-            snippet = result.get(
-                "snippet",
-                ""
-            )
-
-            if title or snippet:
-
-                lines.append(
-                    f"- {title}: {snippet}"
-                )
-
-        return "\n".join(lines)
-
-    # =================================================
-    # CONVERSATION HISTORY
-    # =================================================
-
-    def _prepare_history(self, history, question):
-
-        if not history:
-            return ""
-
-        try:
-
-            lines = []
-
-            items = history[-10:]
-
-            # main.py may already include the current message
-            # in history. Avoid adding it twice.
-            if items:
-
-                last = items[-1]
-
-                if (
-                    last.get("role") == "user"
-                    and last.get("content", "").strip() == question
-                ):
-                    items = items[:-1]
-
-            for item in items:
-
-                role = item.get(
-                    "role",
-                    "user"
-                )
-
-                content = item.get(
-                    "content",
-                    ""
-                )
-
-                if not content:
-                    continue
-
-                if role not in ("user", "assistant"):
-                    continue
-
-                lines.append(
-                    f"{role}: {content}"
-                )
-
-            return "\n".join(lines)
-
-        except Exception:
-
-            logger.exception(
-                "Conversation history processing failed."
-            )
-
-            return ""
-
-    # =================================================
-    # MAIN ANSWER FUNCTION
-    # =================================================
-
-    def answer(
-        self,
-        question: str,
-        db,
-        history=None,
-        mode: str = "fast"
-    ) -> dict:
-
-        question = (
-            question or ""
-        ).strip()
-
+    def answer(self, question: str, db, history=None, mode: str = "fast") -> dict:
+        """Sawal ka jawab do -> {answer, sources}. mode: fast | deep."""
+        question = (question or "").strip()
         if not question:
+            return {"answer": "Kuch poochho to sahi! 😊", "sources": []}
+        system_prompt = DEEP_PROMPT if mode == "deep" else FAST_PROMPT
 
-            return {
-                "answer": "Kuch poochho to sahi! 😊",
-                "sources": []
-            }
-
-        mode = (
-            mode or "fast"
-        ).lower()
-
-        if mode not in ("fast", "deep"):
-            mode = "fast"
-
-        system_prompt = (
-            DEEP_PROMPT
-            if mode == "deep"
-            else FAST_PROMPT
-        )
-
-        logger.info(
-            "New request received. Mode=%s",
-            mode
-        )
-
-        # =============================================
-        # 1. AI NAME
-        # =============================================
-
+        # 1a. AI ka naam poochh raha hai
         if _is_ai_name_question(question):
+            return {"answer": "Main Rama hoon. 😊 Tumhara AI dost!", "sources": []}
 
-            return {
-                "answer": (
-                    "Main RAMA hoon! 😊 "
-                    "Tumhara personal AI assistant."
-                ),
-                "sources": [],
-                "mode": mode
-            }
-
-        # =============================================
-        # 2. USER NAME
-        # =============================================
-
+        # 1b. User ka naam — memory se, kabhi web search nahi
         if _is_user_name_question(question):
-
-            try:
-
-                mem = get_memory(
-                    db,
-                    "user_name"
-                )
-
-                if mem:
-
-                    return {
-                        "answer": (
-                            f"Tumhara naam {mem.value} hai. 😊"
-                        ),
-                        "sources": [],
-                        "mode": mode
-                    }
-
-            except Exception:
-
-                logger.exception(
-                    "User name memory lookup failed."
-                )
-
+            mem = get_memory(db, "user_name")
+            if mem:
+                return {"answer": f"Tumhara naam {mem.value} hai. 😊", "sources": []}
             return {
-                "answer": (
-                    "Mujhe tumhara naam abhi pata nahi. "
-                    "Batao: 'mera naam X hai' likhkar yaad kara do!"
-                ),
+                "answer": "Mujhe tumhara naam abhi pata nahi. Batao — 'mera naam X hai' likh ke yaad kara do!",
                 "sources": [],
-                "mode": mode
             }
 
-        # =============================================
-        # 3. NATURAL GREETINGS
-        # =============================================
-
+        # 1c. Natural greeting — friendly reply, no web search, no Gemini
         if _is_greeting(question):
-
             return {
-                "answer": (
-                    "Hello! 👋 Kaise ho? "
-                    "Batao, main tumhari kya madad kar sakta hoon?"
-                ),
+                "answer": "Hello! 👋 Kaise ho? Batao, main tumhari kya madad kar sakta hoon?",
                 "sources": [],
-                "mode": mode
             }
 
-        # =============================================
-        # 4. PERSONAL MEMORY
-        # =============================================
-
+        # 2. Personal memory pehle — >= 2 content words match ho to seedha wahi jawab
         try:
-
-            memories = search_memories(
-                db,
-                question
-            )
-
+            memories = search_memories(db, question)
         except Exception:
-
-            logger.exception(
-                "Personal memory search failed."
-            )
-
             memories = []
+        q_words = set(content_words(question))
+        for mem in memories:
+            hay_words = set(content_words(f"{mem.key} {mem.value}"))
+            overlap = q_words & hay_words
+            if len(overlap) >= 2:
+                return {"answer": _clean_answer(mem.value), "sources": []}
 
-        try:
-
-            q_words = set(
-                content_words(question)
-            )
-
-            for mem in memories:
-
-                hay_words = set(
-                    content_words(
-                        f"{mem.key} {mem.value}"
-                    )
-                )
-
-                overlap = q_words & hay_words
-
-                if len(overlap) >= 2:
-
-                    logger.info(
-                        "Answer retrieved from personal memory."
-                    )
-
-                    return {
-                        "answer": _clean_answer(
-                            mem.value
-                        ),
-                        "sources": [],
-                        "mode": mode
-                    }
-
-        except Exception:
-
-            logger.exception(
-                "Memory matching failed."
-            )
-
-        # =============================================
-        # 5. CURRENT INFORMATION / WEB SEARCH
-        # =============================================
-
+        # 3. Current/factual sawal — web search
         sources = []
-
-        needs_fresh = _needs_fresh_info(
-            question
-        )
-
-        if needs_fresh:
-
-            sources = self._search_web(
-                question
-            )
-
-            if sources:
-
-                web_context = (
-                    self._prepare_web_context(
-                        sources
-                    )
+        if _needs_fresh_info(question):
+            try:
+                results = web_search(question)
+            except Exception:
+                results = []
+            if results:
+                sources = results
+                web_text = "\n".join(
+                    f"- {r.get('title', '')}: {r.get('snippet', '')}" for r in results[:3]
                 )
-
-                if web_context:
-
-                    web_prompt = (
-                        f"{system_prompt}\n\n"
-                        "You are answering using web search results.\n"
-                        "Use only the supplied search information.\n"
-                        "Do not invent missing facts.\n"
-                        "If information is insufficient, clearly say so.\n\n"
-                        f"Search results:\n{web_context}\n\n"
-                        f"Question: {question}\n\n"
-                        "Answer in the same language as the user."
-                    )
-
-                    gemini_answer = self._ask_gemini(
-                        web_prompt
-                    )
-
-                    if gemini_answer:
-
-                        return {
-                            "answer": _clean_answer(
-                                gemini_answer
-                            ),
-                            "sources": sources,
-                            "mode": mode
-                        }
-
-                # Gemini unavailable:
-                # use available search snippet.
-
-                first = (
-                    sources[0].get(
-                        "snippet",
-                        ""
-                    ).strip()
-                    if isinstance(sources[0], dict)
-                    else ""
+                # Web jawab ko Gemini se process karwao (saaf, seedha jawab)
+                gemini_answer = self._ask_gemini(
+                    f"{system_prompt}\n\n"
+                    f"Search results:\n{web_text}\n\n"
+                    f"Question: {question}\n\n"
+                    "Answer ONLY from the search results above. "
+                    "If the search results do not contain the answer, say you don't know."
                 )
-
+                if gemini_answer:
+                    return {"answer": _clean_answer(gemini_answer), "sources": sources}
+                # Gemini nahi chala to seedha web snippet do
+                first = results[0].get("snippet", "").strip()
                 if first:
+                    return {"answer": _clean_answer(first), "sources": sources}
 
-                    logger.warning(
-                        "Using web snippet fallback."
-                    )
+        # 4. Warna Gemini se jawab
+        history_text = ""
+        if history:
+            try:
+                lines = []
+                for h in history[-6:]:
+                    role = h.get("role", "user")
+                    content = h.get("content", "")
+                    lines.append(f"{role}: {content}")
+                history_text = "\n".join(lines)
+            except Exception:
+                history_text = ""
+        prompt = system_prompt + "\n\n"
+        if history_text:
+            prompt += f"Conversation so far:\n{history_text}\n\n"
+        prompt += (
+            f"Question: {question}\n\n"
+            "Answer in the same language as the question (Hindi/Hinglish/English)."
+        )
+        gemini_answer = self._ask_gemini(prompt)
+        if gemini_answer:
+            return {"answer": _clean_answer(gemini_answer), "sources": sources}
 
-                    return {
-                        "answer": _clean_answer(first),
-                        "sources": sources,
-                        "mode": mode
-                    }
-
-        # =============================================
-        # 6. CONVERSATION HISTORY
-        # ============================================
+        # 5. Last fallback — web search ya imaandaar "nahi pata"
+        if not sources:
+            try:
+                sources = web_search(question)
+            except Exception:
+                sources = []
+        if sources:
+            first = sources[0].get("snippet", "").strip()
+            if first:
+                return {"answer": _clean_answer(first), "sources": sources}
+        return {
+            "answer": "Mujhe iska sahi jawab nahi pata. Dobara poochho ya kuch aur poochho!",
+            "sources": [],
+        }

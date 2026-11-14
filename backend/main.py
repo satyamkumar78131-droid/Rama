@@ -114,6 +114,12 @@ def chat(req: ChatRequest, db: Session = Depends(get_db)):
     if mode not in ("fast", "deep"):
         mode = "fast"
     result = router.answer(message, db, history=history, mode=mode)
+    # Safety net: router kabhi None/dict-ke-bina na laute — warna 500 aata hai
+    if not isinstance(result, dict):
+        result = {
+            "answer": "Mujhe iska sahi jawab nahi pata. Dobara poochho ya kuch aur poochho!",
+            "sources": [],
+        }
     answer = result.get("answer", "")
     sources = result.get("sources", [])
 
