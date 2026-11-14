@@ -1,6 +1,6 @@
 
-"""RAMA — Intelligent AI Router V2
-Smart conversation, identity, memory, web search and Gemini.
+"""RAMA AI Router V3
+Intelligent conversation, identity, memory, web search and Gemini.
 """
 
 import re
@@ -15,65 +15,78 @@ from memory import content_words, get_memory, search_memories
 from security import get_api_key
 from web_search import web_search
 
+
 MODEL = "gemini-2.0-flash"
 
-SYSTEM_PROMPT = """
-You are RAMA, a helpful, friendly and intelligent AI assistant.
 
-Your identity:
+SYSTEM_PROMPT = """
+You are RAMA, an intelligent and helpful personal AI assistant.
+
+IDENTITY:
 - Your name is RAMA.
-- If asked who you are, say you are RAMA.
+- You are the user's AI assistant.
 - Never claim to be another AI.
 
-Rules:
-- Answer in the same language as the user.
+BEHAVIOUR:
 - Understand Hindi, Hinglish and English.
-- Be natural and conversational.
-- Never invent facts, sources or URLs.
-- Use conversation history when relevant.
-- If you don't know something, say so honestly.
-- Give clear and useful answers.
-- Do not output HTML entities or fake citations.
+- Reply in the same language as the user.
+- Be friendly, natural and conversational.
+- Remember the available conversation history.
+- Give accurate and useful answers.
+- Never invent facts, URLs, sources or statistics.
+- If you do not know something, say so honestly.
+- Do not unnecessarily introduce yourself in every reply.
+- Do not unnecessarily mention web searches.
+
+IMPORTANT:
+- Ordinary greetings should receive short greetings.
+- Identity questions should receive your identity.
+- Never confuse the user's identity with your own.
 """
+
 
 FAST_PROMPT = SYSTEM_PROMPT + """
-Keep answers concise, direct and useful.
+MODE: FAST
+
+Give direct, concise and useful answers.
+Avoid unnecessary explanations.
 """
+
 
 DEEP_PROMPT = SYSTEM_PROMPT + """
-Give detailed, well-structured explanations.
-Explain important steps and conclusions without exposing private
-internal reasoning.
-Use examples when helpful.
+MODE: DEEP
+
+Give detailed and well-organized explanations.
+Explain important steps, concepts and conclusions.
+Include examples where useful.
+Do not reveal private internal reasoning.
 """
 
-# Only explicit current-information signals trigger web search.
-FRESH_WORDS = {
-    "latest", "today", "tonight", "yesterday",
-    "breaking", "news", "headlines",
-    "current", "currently", "live", "real-time",
-    "weather", "forecast", "temperature",
-    "price", "prices", "stock", "market",
-    "score", "scores", "match", "standings",
-    "election", "result", "results",
-    "mausam", "aaj", "abhi", "taaza",
-    "khabar", "samachar", "bhav", "kimat",
-    "rate", "dar", "live-score",
-}
 
-def _clean_answer(text: str) -> str:
+# --------------------------------------------------
+# TEXT CLEANING
+# --------------------------------------------------
+
+def _clean_answer(text):
     if not text:
         return ""
 
+    text = str(text)
+
     text = re.sub(r"&#\w+;", "", text)
-    text = (
-        text.replace("&amp;", "&")
-        .replace("&lt;", "<")
-        .replace("&gt;", ">")
-        .replace("&quot;", '"')
-        .replace("&#39;", "'")
-        .replace("&nbsp;", " ")
-    )
+
+    replacements = {
+        "&amp;": "&",
+        "&lt;": "<",
+        "&gt;": ">",
+        "&quot;": '"',
+        "&#39;": "'",
+        "&nbsp;": " ",
+    }
+
+    for old, new in replacements.items():
+        text = text.replace(old, new)
+
     text = re.sub(r"\[\d+\]", "", text)
     text = re.sub(r"\n{3,}", "\n\n", text)
 
@@ -81,36 +94,89 @@ def _clean_answer(text: str) -> str:
 
 
 def _normalize(text):
-    return re.sub(r"\s+", " ", (text or "").lower()).strip()
+    return re.sub(
+        r"\s+",
+        " ",
+        (text or "").lower().strip()
+    )
 
+
+# --------------------------------------------------
+# GREETING DETECTION
+# --------------------------------------------------
 
 def _is_greeting(question):
     q = _normalize(question)
 
+    # Standalone greetings
+    greetings = {
+        "hello",
+        "hello!",
+        "hi",
+        "hi!",
+        "hey",
+        "hey!",
+        "hii",
+        "hiii",
+        "namaste",
+        "namaskar",
+        "pranam",
+        "good morning",
+        "good afternoon",
+        "good evening",
+    }
+
+    if q in greetings:
+        return True
+
+    # Greeting followed by the assistant's name
+    if re.fullmatch(
+        r"(hello|hi|hey|hii|hiii)\s+(rama|ram)?[!. ]*",
+        q
+    ):
+        return True
+
+    return False
+
+
+def _is_how_are_you(question):
+    q = _normalize(question)
+
     patterns = [
-        r"^(hi|hello|hey|hii|heyy)[!. ]*$",
-        r"^(namaste|namaskar|pranam)[!. ]*$",
-        r"^(good morning|good afternoon|good evening)[!. ]*$",
-        r"^(kaise ho|kaisa hai|kaisi ho)[?!. ]*$",
-        r"^(how are you|how are you doing)[?!. ]*$",
-        r"^(kya haal hai|sab badhiya|aur batao)[?!. ]*$",
+        r"^how are you[?!. ]*$",
+        r"^how are you doing[?!. ]*$",
+        r"^kaise ho[?!. ]*$",
+        r"^kaisa hai[?!. ]*$",
+        r"^kaisi ho[?!. ]*$",
+        r"^kya haal hai[?!. ]*$",
+        r"^sab badhiya[?!. ]*$",
     ]
 
-    return any(re.match(p, q) for p in patterns)
+    return any(re.search(p, q) for p in patterns)
 
+
+# --------------------------------------------------
+# IDENTITY DETECTION
+# --------------------------------------------------
 
 def _is_ai_name_question(question):
     q = _normalize(question)
 
     patterns = [
-        r"\b(tumhara|aapka|tera)\s+naam\s+kya\b",
-        r"\b(what is|what's)\s+your\s+name\b",
-        r"\bwho\s+are\s+you\b",
-        r"\btum\s+kaun\s+ho\b",
-        r"\btum\s+kon\s+ho\b",
-        r"\baap\s+kaun\s+ho\b",
-        r"\baap\s+kon\s+ho\b",
-        r"\btera\s+naam\s+kya\s+hai\b",
+        r"\bwho are you\b",
+        r"\bwho r u\b",
+        r"\bwhat is your name\b",
+        r"\bwhat's your name\b",
+        r"\bwhats your name\b",
+        r"\btum kaun ho\b",
+        r"\btum kon ho\b",
+        r"\baap kaun ho\b",
+        r"\baap kon ho\b",
+        r"\btumhara naam kya\b",
+        r"\baapka naam kya\b",
+        r"\btera naam kya\b",
+        r"\bwho made you\b",
+        r"\bwho created you\b",
     ]
 
     return any(re.search(p, q) for p in patterns)
@@ -120,44 +186,93 @@ def _is_user_name_question(question):
     q = _normalize(question)
 
     patterns = [
-        r"\bmera\s+naam\s+kya\b",
+        r"\bmera naam kya\b",
         r"\bwhat is my name\b",
         r"\bwhat's my name\b",
+        r"\bwhats my name\b",
         r"\bdo you know my name\b",
     ]
 
     return any(re.search(p, q) for p in patterns)
 
 
+# --------------------------------------------------
+# WEB SEARCH INTENT
+# --------------------------------------------------
+
 def _needs_fresh_info(question):
     q = _normalize(question)
-    words = set(re.findall(r"[a-zA-Z\u0900-\u097F]+", q))
 
-    # Explicit fresh-information keywords
-    if words & FRESH_WORDS:
-        return True
-
-    # Explicit current-information requests
     patterns = [
-        r"\b(latest|recent|breaking)\s+(news|updates|information)\b",
-        r"\bwhat happened (today|yesterday|recently)\b",
-        r"\bwho is the current\b",
-        r"\bcurrent (president|prime minister|pm|ceo)\b",
-        r"\b(aaj ki|taaza)\s+(khabar|news)\b",
-        r"\b(abhi ka|aaj ka)\s+(price|rate|score|result)\b",
-        r"\bprice of\b.*\b(today|now|current)\b",
+        r"\blatest news\b",
+        r"\btoday's news\b",
+        r"\btodays news\b",
+        r"\bbreaking news\b",
+        r"\blatest updates\b",
+        r"\bcurrent news\b",
+        r"\bweather today\b",
+        r"\bweather now\b",
+        r"\bcurrent weather\b",
+        r"\blive score\b",
+        r"\bcurrent score\b",
+        r"\btoday's price\b",
+        r"\btodays price\b",
+        r"\bcurrent price\b",
+        r"\bprice right now\b",
+        r"\bcurrent president\b",
+        r"\bcurrent prime minister\b",
+        r"\bwho won\b.*\b(today|yesterday|recently)\b",
+        r"\bwhat happened today\b",
+        r"\bwhat happened yesterday\b",
+        r"\baaj ki khabar\b",
+        r"\baaj ki news\b",
+        r"\btaaza khabar\b",
+        r"\blatest khabar\b",
+        r"\babhi ka mausam\b",
+        r"\baaj ka mausam\b",
+        r"\baaj ka score\b",
+        r"\baaj ka result\b",
+        r"\babhi ka price\b",
+        r"\baaj ka price\b",
+        r"\blatest ai news\b",
     ]
 
-    return any(re.search(p, q) for p in patterns)
+    if any(re.search(p, q) for p in patterns):
+        return True
 
+    # Explicit current-information keywords
+    fresh_words = {
+        "latest",
+        "breaking",
+        "today",
+        "currently",
+        "recently",
+        "live",
+        "forecast",
+        "weather",
+        "mausam",
+        "khabar",
+        "samachar",
+        "taaza",
+        "abhi",
+    }
+
+    words = set(re.findall(r"[a-zA-Z\u0900-\u097F]+", q))
+
+    return bool(words & fresh_words)
+
+
+# --------------------------------------------------
+# SOURCE FILTERING
+# --------------------------------------------------
 
 def _dedupe_sources(sources):
-    """Remove duplicate URLs and repeated source domains."""
     unique = []
     seen_urls = set()
     seen_domains = set()
 
     for source in sources or []:
+
         if not isinstance(source, dict):
             continue
 
@@ -169,6 +284,7 @@ def _dedupe_sources(sources):
         )
 
         domain = ""
+
         if url:
             try:
                 domain = urlparse(url).netloc.lower()
@@ -179,6 +295,7 @@ def _dedupe_sources(sources):
         if url and url in seen_urls:
             continue
 
+        # Keep one result per domain to avoid repeated links
         if domain and domain in seen_domains:
             continue
 
@@ -196,29 +313,41 @@ def _dedupe_sources(sources):
     return unique
 
 
+# --------------------------------------------------
+# MAIN AI ROUTER
+# --------------------------------------------------
+
 class AIRouter:
 
     def __init__(self):
         self._client = None
 
+    # Gemini client
     def _get_client(self):
+
         if genai is None:
             return None
 
         if self._client is None:
+
             try:
                 key = get_api_key()
+
                 if not key:
                     return None
 
-                self._client = genai.Client(api_key=key)
+                self._client = genai.Client(
+                    api_key=key
+                )
 
             except Exception:
                 return None
 
         return self._client
 
+    # Ask Gemini
     def _ask_gemini(self, prompt):
+
         client = self._get_client()
 
         if client is None:
@@ -233,21 +362,36 @@ class AIRouter:
             answer = getattr(response, "text", None)
 
             if answer:
-                return _clean_answer(answer)
+                answer = _clean_answer(answer)
 
-        except Exception:
-            return None
+                if answer:
+                    return answer
+
+        except Exception as error:
+            print("RAMA Gemini Error:", str(error))
 
         return None
 
+    # Search internet
     def _search(self, question):
+
         try:
             results = web_search(question)
+
             return _dedupe_sources(results)
-        except Exception:
+
+        except Exception as error:
+            print("RAMA Search Error:", str(error))
             return []
 
-    def answer(self, question, db, history=None, mode="fast"):
+    # Main answer function
+    def answer(
+        self,
+        question,
+        db,
+        history=None,
+        mode="fast"
+    ):
 
         question = (question or "").strip()
 
@@ -259,26 +403,43 @@ class AIRouter:
 
         mode = (mode or "fast").lower()
 
+        if mode not in ("fast", "deep"):
+            mode = "fast"
+
         system_prompt = (
-            DEEP_PROMPT if mode == "deep"
+            DEEP_PROMPT
+            if mode == "deep"
             else FAST_PROMPT
         )
 
-        # 1. RAMA identity
+        # ------------------------------------------
+        # 1. AI IDENTITY
+        # ------------------------------------------
+
         if _is_ai_name_question(question):
+
             return {
-                "answer": "Main RAMA hoon! 😊 Tumhara personal AI assistant.",
+                "answer": (
+                    "Main RAMA hoon! 😊 "
+                    "Tumhara personal AI assistant."
+                ),
                 "sources": [],
             }
 
-        # 2. User identity
+        # ------------------------------------------
+        # 2. USER NAME
+        # ------------------------------------------
+
         if _is_user_name_question(question):
+
             try:
                 mem = get_memory(db, "user_name")
 
                 if mem:
                     return {
-                        "answer": f"Tumhara naam {mem.value} hai. 😊",
+                        "answer": (
+                            f"Tumhara naam {mem.value} hai. 😊"
+                        ),
                         "sources": [],
                     }
 
@@ -293,33 +454,51 @@ class AIRouter:
                 "sources": [],
             }
 
-        # 3. Greetings and small talk
+        # ------------------------------------------
+        # 3. GREETING
+        # ------------------------------------------
+
         if _is_greeting(question):
+
             q = _normalize(question)
 
-            if "how are you" in q or "kaise ho" in q or "kaisa hai" in q:
-                answer = (
-                    "Main badhiya hoon! 😊 "
-                    "Tum batao, main tumhari kya help kar sakta hoon?"
-                )
-            elif "good morning" in q:
-                answer = "Good morning! ☀️ Aaj main tumhari kya help karun?"
+            if "good morning" in q:
+                answer = "Good morning! ☀️ Kaise ho?"
+
+            elif "good afternoon" in q:
+                answer = "Good afternoon! 😊 Kaise ho?"
+
             elif "good evening" in q:
                 answer = "Good evening! 😊 Kaise ho?"
-            elif "good afternoon" in q:
-                answer = "Good afternoon! 😊 Batao, kya help chahiye?"
+
             else:
-                answer = (
-                    "Hello! 👋 Main RAMA hoon. "
-                    "Batao, aaj kya jaanna chahte ho?"
-                )
+                # IMPORTANT:
+                # Normal hello par self-introduction nahi.
+                answer = "Hello! 👋 Kaise ho? Batao, kya chal raha hai?"
 
             return {
                 "answer": answer,
                 "sources": [],
             }
 
-        # 4. Personal memory first
+        # ------------------------------------------
+        # 4. HOW ARE YOU
+        # ------------------------------------------
+
+        if _is_how_are_you(question):
+
+            return {
+                "answer": (
+                    "Main badhiya hoon! 😊 "
+                    "Tum batao, kaise ho?"
+                ),
+                "sources": [],
+            }
+
+        # ------------------------------------------
+        # 5. PERSONAL MEMORY
+        # ------------------------------------------
+
         try:
             memories = search_memories(db, question)
         except Exception:
@@ -328,12 +507,18 @@ class AIRouter:
         q_words = set(content_words(question))
 
         for mem in memories:
+
             try:
                 saved_words = set(
-                    content_words(f"{mem.key} {mem.value}")
+                    content_words(
+                        f"{mem.key} {mem.value}"
+                    )
                 )
 
-                if len(q_words & saved_words) >= 2:
+                overlap = q_words & saved_words
+
+                if len(overlap) >= 2:
+
                     return {
                         "answer": _clean_answer(mem.value),
                         "sources": [],
@@ -342,95 +527,127 @@ class AIRouter:
             except Exception:
                 continue
 
-        # 5. Recent/current information only
+        # ------------------------------------------
+        # 6. CURRENT INFORMATION SEARCH
+        # ------------------------------------------
+
         sources = []
 
         if _needs_fresh_info(question):
+
             sources = self._search(question)
 
             if sources:
+
                 web_text = "\n".join(
-                    f"- {r.get('title', '')}: {r.get('snippet', '')}"
-                    for r in sources[:5]
+                    (
+                        f"- {item.get('title', '')}: "
+                        f"{item.get('snippet', '')}"
+                    )
+                    for item in sources[:5]
                 )
 
                 prompt = (
                     system_prompt
-                    + "\n\nUse ONLY these search results for current facts.\n"
+                    + "\n\nSearch results:\n"
                     + web_text
-                    + f"\n\nUser question: {question}\n"
-                    + "Answer naturally in the user's language. "
-                    + "If the results do not answer the question, "
-                    + "clearly say that the information is unavailable."
+                    + "\n\nQuestion: "
+                    + question
+                    + "\n\nAnswer using only the supplied "
+                    "search results for current facts. "
+                    "Do not invent missing information. "
+                    "Respond in the user's language."
                 )
 
                 answer = self._ask_gemini(prompt)
 
                 if answer:
+
                     return {
                         "answer": answer,
                         "sources": sources,
                     }
 
-                # Gemini unavailable: use actual search snippets
                 snippets = [
-                    r.get("snippet", "").strip()
-                    for r in sources
-                    if r.get("snippet", "").strip()
+                    item.get("snippet", "").strip()
+                    for item in sources
+                    if item.get("snippet", "").strip()
                 ]
 
                 if snippets:
+
                     return {
                         "answer": _clean_answer(snippets[0]),
                         "sources": sources,
                     }
 
-        # 6. Normal conversation with history
+        # ------------------------------------------
+        # 7. CONVERSATION HISTORY
+        # ------------------------------------------
+
         history_text = ""
 
         if history:
+
             try:
                 lines = []
 
                 for item in history[-8:]:
+
                     role = item.get("role", "user")
                     content = item.get("content", "")
 
                     if role not in ("user", "assistant"):
                         continue
 
-                    lines.append(f"{role}: {content}")
+                    lines.append(
+                        f"{role}: {content}"
+                    )
 
                 history_text = "\n".join(lines)
 
             except Exception:
                 history_text = ""
 
+        # ------------------------------------------
+        # 8. NORMAL GEMINI CHAT
+        # ------------------------------------------
+
         prompt = system_prompt + "\n\n"
 
         if history_text:
+
             prompt += (
-                "Previous conversation:\n"
+                "Conversation history:\n"
                 + history_text
                 + "\n\n"
             )
 
         prompt += (
-            f"User: {question}\n\n"
-            "Respond naturally and directly. "
-            "Do not search the internet for ordinary conversation. "
-            "Answer in the same language as the user."
+            "Current user message:\n"
+            + question
+            + "\n\n"
+            "Answer naturally and directly. "
+            "Use the conversation history when relevant. "
+            "Do not search the internet for normal conversation. "
+            "Reply in the same language as the user."
         )
 
         answer = self._ask_gemini(prompt)
 
         if answer:
+
             return {
                 "answer": answer,
                 "sources": [],
             }
 
-        # 7. Honest fallback — NEVER search every failed chat question
+        # ------------------------------------------
+        # 9. HONEST FALLBACK
+        # ------------------------------------------
+
+        # Never search normal messages just because Gemini failed.
+
         return {
             "answer": (
                 "Abhi mera AI service respond nahi kar raha. "
