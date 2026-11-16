@@ -20,6 +20,11 @@ def get_api_key() -> str:
     return os.getenv("GEMINI_API_KEY", "").strip()
 
 
+def get_hf_token() -> str:
+    """HF_TOKEN env se lo (Hugging Face Inference — Qwen brain ke liye); na ho to empty string."""
+    return os.getenv("HF_TOKEN", "").strip()
+
+
 def check_api_key() -> bool:
     """Key set hai ya nahi."""
     return bool(get_api_key())

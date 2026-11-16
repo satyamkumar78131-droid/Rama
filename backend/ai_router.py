@@ -6,13 +6,17 @@ Order (hamesha yahi):
 2. Personal memory pehle — saved memory jawab de (>= 2 content words
    overlap) to web search BILKUL nahi.
 3. Current/factual sawal — web_search + sources.
-4. Warna Gemini (gemini-2.0-flash) — step by step, facts invent nahi karta.
-5. Gemini na ho / fail ho — web search ya imaandaar "nahi pata".
+4. Warna BRAIN se jawab — pehle Qwen3-4B (HF Inference, free), na chale to
+   Gemini (gemini-2.0-flash) fallback. Step by step, facts invent nahi karta.
+5. Brain na ho / fail ho — web search ya imaandaar "nahi pata".
 
 Jawab me kabhi HTML entities (&#x27;) ya citation markers ([1], [12]) nahi aate.
 Har external call try/except me hai — kuch bhi crash nahi karta.
 """
+import json
 import re
+import urllib.error
+import urllib.request
 
 try:
     from google import genai
@@ -20,10 +24,20 @@ except Exception:  # google-genai install na ho to bhi app chalegi
     genai = None
 
 from memory import content_words, get_memory, search_memories
-from security import get_api_key
+from security import get_api_key, get_hf_token
 from web_search import web_search
 
 MODEL = "gemini-2.0-flash"
+
+# Qwen brain — HF Inference API (router, OpenAI-compatible). Koi nayi dependency
+# nahi — sirf stdlib urllib. HF_TOKEN Render env me set ho to Qwen pehle
+# try hota hai, warna Gemini fallback.
+QWEN_MODEL = "Qwen/Qwen3-4B"
+QWEN_ROUTER_URL = "https://router.huggingface.co/v1/chat/completions"
+QWEN_SYSTEM = (
+    "You are RAMA, an intelligent, helpful AI assistant. "
+    "Answer accurately in Hindi, English or Hinglish."
+)
 
 SYSTEM_PROMPT = (
     "You are Rama, a helpful AI assistant. "
@@ -56,6 +70,7 @@ def _clean_answer(text: str) -> str:
     """HTML entities aur citation markers hatao."""
     if not text:
         return ""
+    text = re.sub(r"<think>.*?</think>", "", text, flags=re.S)  # Qwen thinking block
     text = re.sub(r"&#\w+;", "", text)
     text = text.replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
     text = text.replace("&quot;", '"').replace("&#39;", "'").replace("&nbsp;", " ")
@@ -141,6 +156,46 @@ class AIRouter:
         except Exception:
             return None
 
+    def _ask_qwen(self, prompt: str):
+        """Qwen3-4B se jawab lo (HF Inference router); fail ho ya token na ho to None."""
+        token = get_hf_token()
+        if not token:
+            return None
+        body = {
+            "model": QWEN_MODEL,
+            "messages": [
+                {"role": "system", "content": QWEN_SYSTEM},
+                {"role": "user", "content": prompt},
+            ],
+            "max_tokens": 300,
+            "temperature": 0.7,
+            "top_p": 0.8,
+            "chat_template_kwargs": {"enable_thinking": False},
+        }
+        req = urllib.request.Request(
+            QWEN_ROUTER_URL,
+            data=json.dumps(body).encode(),
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                data = json.loads(resp.read().decode())
+            text = (data["choices"][0]["message"]["content"] or "").strip()
+            return text if text else None
+        except Exception:
+            return None
+
+    def _ask_brain(self, prompt: str):
+        """Brain: pehle Qwen3-4B (HF Inference), na chale to Gemini fallback."""
+        answer = self._ask_qwen(prompt)
+        if answer:
+            return answer
+        return self._ask_gemini(prompt)
+
     def answer(self, question: str, db, history=None, mode: str = "fast") -> dict:
         """Sawal ka jawab do -> {answer, sources}. mode: fast | deep."""
         question = (question or "").strip()
@@ -193,22 +248,22 @@ class AIRouter:
                 web_text = "\n".join(
                     f"- {r.get('title', '')}: {r.get('snippet', '')}" for r in results[:3]
                 )
-                # Web jawab ko Gemini se process karwao (saaf, seedha jawab)
-                gemini_answer = self._ask_gemini(
+                # Web jawab ko brain se process karwao (saaf, seedha jawab)
+                brain_answer = self._ask_brain(
                     f"{system_prompt}\n\n"
                     f"Search results:\n{web_text}\n\n"
                     f"Question: {question}\n\n"
                     "Answer ONLY from the search results above. "
                     "If the search results do not contain the answer, say you don't know."
                 )
-                if gemini_answer:
-                    return {"answer": _clean_answer(gemini_answer), "sources": sources}
-                # Gemini nahi chala to seedha web snippet do
+                if brain_answer:
+                    return {"answer": _clean_answer(brain_answer), "sources": sources}
+                # Brain nahi chala to seedha web snippet do
                 first = results[0].get("snippet", "").strip()
                 if first:
                     return {"answer": _clean_answer(first), "sources": sources}
 
-        # 4. Warna Gemini se jawab
+        # 4. Warna brain se jawab (Qwen pehle, Gemini fallback)
         history_text = ""
         if history:
             try:
@@ -227,9 +282,9 @@ class AIRouter:
             f"Question: {question}\n\n"
             "Answer in the same language as the question (Hindi/Hinglish/English)."
         )
-        gemini_answer = self._ask_gemini(prompt)
-        if gemini_answer:
-            return {"answer": _clean_answer(gemini_answer), "sources": sources}
+        brain_answer = self._ask_brain(prompt)
+        if brain_answer:
+            return {"answer": _clean_answer(brain_answer), "sources": sources}
 
         # 5. Last fallback — web search ya imaandaar "nahi pata"
         if not sources:
