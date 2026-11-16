@@ -312,7 +312,10 @@ class AIRouter:
                     "If the search results do not contain the answer, say you don't know."
                 )
                 if brain_answer:
-                    return {"answer": _clean_answer(brain_answer), "sources": sources, "brain": brain}
+                    out = {"answer": _clean_answer(brain_answer), "sources": sources, "brain": brain}
+                    if brain == "gemini" and self._last_qwen_error:
+                        out["debug"] = {"qwen": self._last_qwen_error}
+                    return out
                 # Brain nahi chala to seedha web snippet do
                 first = results[0].get("snippet", "").strip()
                 if first:
@@ -339,7 +342,11 @@ class AIRouter:
         )
         brain_answer, brain = self._ask_brain(prompt)
         if brain_answer:
-            return {"answer": _clean_answer(brain_answer), "sources": sources, "brain": brain}
+            out = {"answer": _clean_answer(brain_answer), "sources": sources, "brain": brain}
+            # Gemini se jawab aaya matlab Qwen fail hua — uski wajah bhi dikhao
+            if brain == "gemini" and self._last_qwen_error:
+                out["debug"] = {"qwen": self._last_qwen_error}
+            return out
 
         # 5. Last fallback — web search ya imaandaar "nahi pata"
         if not sources:
