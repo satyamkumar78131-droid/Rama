@@ -802,3 +802,199 @@ body {
   border-radius: 4px;
   font-size: 13px;
 }
+
+/* ---------- 🎙️ Live Baat (Gemini Live style, turn-based) ---------- */
+.live-open-btn {
+  display: block;
+  width: 100%;
+  margin: 8px 0;
+  padding: 10px 16px;
+  border: 1.5px solid #00a884;
+  border-radius: 999px;
+  background: #e6f7f1;
+  color: #007a5e;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.live-open-btn:active { background: #c8efe3; }
+
+.live-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: linear-gradient(180deg, #f6f4ef 0%, #e8f3ee 55%, #dcefe7 100%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 20px 18px calc(20px + env(safe-area-inset-bottom));
+  overflow-y: auto;
+}
+
+.live-top {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.live-title { font-size: 18px; font-weight: 800; color: #111; }
+
+.live-close {
+  width: 40px;
+  height: 40px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.07);
+  font-size: 18px;
+  cursor: pointer;
+}
+
+.live-orb {
+  width: 140px;
+  height: 140px;
+  margin-top: 36px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #7ee2c4, #00a884 70%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 56px;
+  box-shadow: 0 8px 30px rgba(0, 168, 132, 0.35);
+}
+
+.live-orb.listening { animation: livePulse 1.6s ease-in-out infinite; }
+
+.live-orb.speaking {
+  background: radial-gradient(circle at 35% 30%, #8ec5ff, #2b7de9 70%);
+  box-shadow: 0 8px 30px rgba(43, 125, 233, 0.35);
+  animation: livePulseBlue 1.2s ease-in-out infinite;
+}
+
+.live-orb.thinking { animation: livePulse 2.2s ease-in-out infinite; opacity: 0.85; }
+
+@keyframes livePulse {
+  0%, 100% { transform: scale(1); box-shadow: 0 8px 30px rgba(0, 168, 132, 0.35), 0 0 0 0 rgba(0, 168, 132, 0.25); }
+  50% { transform: scale(1.07); box-shadow: 0 8px 30px rgba(0, 168, 132, 0.35), 0 0 0 22px rgba(0, 168, 132, 0); }
+}
+
+@keyframes livePulseBlue {
+  0%, 100% { transform: scale(1); box-shadow: 0 8px 30px rgba(43, 125, 233, 0.35), 0 0 0 0 rgba(43, 125, 233, 0.25); }
+  50% { transform: scale(1.07); box-shadow: 0 8px 30px rgba(43, 125, 233, 0.35), 0 0 0 22px rgba(43, 125, 233, 0); }
+}
+
+.live-status {
+  margin-top: 22px;
+  font-size: 20px;
+  font-weight: 700;
+  color: #111;
+  text-align: center;
+}
+
+.live-intro {
+  margin: 14px 0 0;
+  max-width: 320px;
+  text-align: center;
+  font-size: 15px;
+  line-height: 1.5;
+  color: #44505a;
+}
+
+.live-start-btn {
+  margin-top: 26px;
+  padding: 16px 30px;
+  border: none;
+  border-radius: 999px;
+  background: #00a884;
+  color: #fff;
+  font-size: 18px;
+  font-weight: 800;
+  cursor: pointer;
+  box-shadow: 0 6px 20px rgba(0, 168, 132, 0.4);
+}
+
+.live-start-btn:active { background: #008f71; }
+
+.live-box {
+  width: 100%;
+  max-width: 480px;
+  margin-top: 14px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.85);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.06);
+}
+
+.live-box-label { font-size: 12px; font-weight: 700; color: #667085; margin-bottom: 4px; }
+
+.live-box-text { font-size: 15px; line-height: 1.5; color: #111; }
+
+.live-reply-box { max-height: 32vh; overflow-y: auto; }
+
+.live-error {
+  width: 100%;
+  max-width: 480px;
+  margin-top: 16px;
+  padding: 14px;
+  border-radius: 14px;
+  background: #fdecea;
+  color: #8f1d14;
+  text-align: center;
+}
+
+.live-error p { margin: 0 0 12px; font-size: 15px; line-height: 1.5; }
+
+.live-retry-btn {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 999px;
+  background: #c0392b;
+  color: #fff;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.live-controls {
+  margin-top: auto;
+  padding-top: 24px;
+  width: 100%;
+  max-width: 480px;
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+}
+
+.live-hangup {
+  flex: 1;
+  padding: 15px 18px;
+  border: none;
+  border-radius: 999px;
+  background: #e8533f;
+  color: #fff;
+  font-size: 17px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.live-hangup:active { background: #cf3f2c; }
+
+.live-mute {
+  flex: 1;
+  padding: 15px 18px;
+  border: none;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.12);
+  color: #111;
+  font-size: 17px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.live-note {
+  margin: 12px 0 0;
+  font-size: 12px;
+  color: #667085;
+  text-align: center;
+}

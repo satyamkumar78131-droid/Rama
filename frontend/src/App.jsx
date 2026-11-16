@@ -3,6 +3,7 @@ import MessageList from './components/MessageList.jsx'
 import ChatInput from './components/ChatInput.jsx'
 import Sidebar from './components/Sidebar.jsx'
 import VideoEditor from './components/VideoEditor.jsx'
+import LiveVoice from './components/LiveVoice.jsx'
 
 // Vercel pe VITE_API_BASE_URL set karo (Render backend URL), local me localhost:8000
 const API = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
@@ -43,6 +44,7 @@ export default function App() {
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [splash, setSplash] = useState(true) // SAIME-style startup animation, "RAMA" text
   const [splashLeaving, setSplashLeaving] = useState(false)
+  const [liveOpen, setLiveOpen] = useState(false) // 🎙️ Live Baat full-screen view
   const [voiceOn, setVoiceOn] = useState(() => loadStored('rama_voice'))
   const [wakeOn, setWakeOn] = useState(() => loadStored('rama_wakelock'))
   const [wakeSupported] = useState(() => {
@@ -127,8 +129,8 @@ export default function App() {
     const last = messages[idx]
     if (last.role !== 'assistant' || idx <= spokenIdxRef.current) return
     spokenIdxRef.current = idx
-    if (voiceOn && last.content) speakText(last.content)
-  }, [messages, voiceOn])
+    if (voiceOn && last.content && !liveOpen) speakText(last.content)
+  }, [messages, voiceOn, liveOpen])
 
   /* ---------- Wake Lock: screen on rakhna ---------- */
   async function requestWakeLock() {
@@ -180,7 +182,10 @@ export default function App() {
     storeValue('rama_wakelock', next)
   }
 
-  async function sendMessage(text) {
+  /* modeOverride: Live Baat hamesha 'fast' bhejta hai (tez jawab ke liye).
+     Jawab ka text return karta hai (string) taaki Live use bol sake;
+     fail hone par null — Live phir "dobara sun raha hoon" bolta hai. */
+  async function sendMessage(text, modeOverride) {
     // Naya message bhejte hi bolna band karo
     try { window.speechSynthesis?.cancel() } catch (e) { /* ignore */ }
     const userMsg = { role: 'user', content: text }
@@ -194,7 +199,7 @@ export default function App() {
           res = await fetch(`${API}/chat`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ message: text, conversation_id: conversationId, mode }),
+            body: JSON.stringify({ message: text, conversation_id: conversationId, mode: modeOverride || mode }),
           })
           data = await res.json()
           break
@@ -210,11 +215,13 @@ export default function App() {
         ])
         if (data.conversation_id) setConversationId(data.conversation_id)
         loadSidebar()
+        return data.answer
       } else {
         setMessages((prev) => [
           ...prev,
           { role: 'assistant', content: 'Error: ' + (data.detail || 'kuch galat hua') },
         ])
+        return null
       }
     } catch (e) {
       setMessages((prev) => [
@@ -224,6 +231,7 @@ export default function App() {
           content: 'Backend se connect nahi ho pa raha. Backend ek second ke liye band ho gaya tha — wahi message dobara bhejo, ab chal raha hoga.',
         },
       ])
+      return null
     } finally {
       setTyping(false)
     }
@@ -336,6 +344,9 @@ export default function App() {
         {tab === 'chat' && (
           <>
             <MessageList messages={messages} typing={typing} />
+            <button type="button" className="live-open-btn" onClick={() => setLiveOpen(true)}>
+              🎙️ Live Baat
+            </button>
             <ChatInput onSend={sendMessage} sending={typing} onFile={handleFile} />
           </>
         )}
@@ -463,6 +474,10 @@ export default function App() {
           />
         </div>
       </div>
+
+      {liveOpen && (
+        <LiveVoice api={API} onSend={sendMessage} onClose={() => setLiveOpen(false)} />
+      )}
     </div>
   )
 }
