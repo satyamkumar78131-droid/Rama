@@ -7,7 +7,9 @@ Order (hamesha yahi):
    overlap) to web search BILKUL nahi.
 3. Current/factual sawal — web_search + sources.
 4. Warna BRAIN se jawab — pehle Qwen3-4B (HF Inference, free), na chale to
-   Gemini (gemini-2.0-flash) fallback. Step by step, facts invent nahi karta.
+   Gemini fallback (models ek ke baad ek try hote hain: 3.8 Flash, phir
+   3.5 Flash-Lite, phir 2.5 Flash — jo mile wahi). Step by step, facts
+   invent nahi karta.
 5. Brain na ho / fail ho — web search ya imaandaar "nahi pata".
 
 Jawab me kabhi HTML entities (&#x27;) ya citation markers ([1], [12]) nahi aate.
@@ -27,7 +29,9 @@ from memory import content_words, get_memory, search_memories
 from security import get_api_key, get_hf_token
 from web_search import web_search
 
-MODEL = "gemini-2.0-flash"
+# Gemini models, try karne ka order. gemini-2.0-flash band ho gaya hai
+# ("no longer available") — isliye naye models pehle; jo mile wahi use hoga.
+GEMINI_MODELS = ["gemini-3.8-flash", "gemini-3.5-flash-lite", "gemini-2.5-flash"]
 
 # Qwen brain — HF Inference API (router, OpenAI-compatible). Koi nayi dependency
 # nahi — sirf stdlib urllib. HF_TOKEN Render env me set ho to Qwen pehle
@@ -156,24 +160,27 @@ class AIRouter:
         return self._client
 
     def _ask_gemini(self, prompt: str):
-        """Gemini se jawab lo; fail ho to None (wajah _last_gemini_error me)."""
+        """Gemini se jawab lo (models ek ke baad ek try hote hain);
+        sab fail hon to None (wajah _last_gemini_error me)."""
         client = self._get_client()
         if client is None:
             return None
-        try:
-            resp = client.models.generate_content(
-                model=MODEL,
-                contents=prompt,
-            )
-            text = (resp.text or "").strip()
-            if text:
-                self._last_gemini_error = None
-                return text
-            self._last_gemini_error = "empty response"
-            return None
-        except Exception as e:
-            self._last_gemini_error = self._safe_err(e)
-            return None
+        last_err = None
+        for model in GEMINI_MODELS:
+            try:
+                resp = client.models.generate_content(
+                    model=model,
+                    contents=prompt,
+                )
+                text = (resp.text or "").strip()
+                if text:
+                    self._last_gemini_error = None
+                    return text
+                last_err = "empty response"
+            except Exception as e:
+                last_err = self._safe_err(e)
+        self._last_gemini_error = last_err
+        return None
 
     def _ask_qwen(self, prompt: str):
         """Qwen3-4B se jawab lo (HF Inference router); fail ho ya token na ho to None
