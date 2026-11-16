@@ -119,6 +119,23 @@ def _is_ai_name_question(question: str) -> bool:
     )
 
 
+def _is_creator_question(question: str) -> bool:
+    """RAMA ko kisne banaya — ye sawal? ("tumhe kisne banaya" / "who made you")
+    Dhyaan: "Taj Mahal kisne banaya" / "Python kisne banaya" isme NAHI aane chahiye —
+    isliye 'tumhe/tumko/aapko' ya 'you' ka hona zaroori hai."""
+    low = question.lower()
+    return bool(
+        re.search(r"(tumhe|tumko|tujhe|aapko)\s+(kisne|kis\s+ne)\s+banaya", low)
+        or re.search(r"kisne\s+banaya\s+(tumhe|tumko|tujhe|aapko)", low)
+        or re.search(r"(tumhe|tumko|tujhe|aapko)\s+kisne\s+(develop|create|design)\s+kiya", low)
+        or re.search(r"who\s+(made|created|built|developed|designed)\s+you\b", low)
+        or re.search(r"who\s+is\s+your\s+(creator|developer|maker)\b", low)
+        or re.search(r"\bwho\s+made\s+u\b", low)
+        or re.search(r"tumhara\s+(creator|developer)\b", low)
+        or re.search(r"tum\s+kisne\s+banaya", low)
+    )
+
+
 def _is_greeting(question: str) -> bool:
     """Natural greeting? ("hello" / "hi" / "namaste" — poora message greeting ho)."""
     low = re.sub(r"[^\w\s]", "", question.lower()).strip()
@@ -274,6 +291,10 @@ class AIRouter:
         # 1a. AI ka naam poochh raha hai
         if _is_ai_name_question(question):
             return {"answer": "Main Rama hoon. 😊 Tumhara AI dost!", "sources": []}
+
+        # 1a2. RAMA ko kisne banaya — fixed jawab, warna Qwen/Gemini alag-alag batate hain
+        if _is_creator_question(question):
+            return {"answer": "Mujhe Satya ne banaya hai — main RAMA, unka AI assistant hoon. 😊", "sources": []}
 
         # 1b. User ka naam — memory se, kabhi web search nahi
         if _is_user_name_question(question):
