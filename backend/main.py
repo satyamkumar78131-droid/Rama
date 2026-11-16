@@ -15,6 +15,8 @@ Endpoints:
 """
 from typing import Optional
 
+import os
+
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -131,9 +133,22 @@ def chat(req: ChatRequest, db: Session = Depends(get_db)):
     return {"answer": answer, "sources": sources, "conversation_id": conv.id, "mode": mode, "brain": brain, "debug": debug}
 
 
+# Photo upload ke liye image types (Gemini vision se describe hoti hai)
+IMAGE_EXTS = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp", ".gif": "image/gif"}
+
+
 @app.post("/upload")
 async def upload(file: UploadFile = File(...), db: Session = Depends(get_db)):
     data = await file.read()
+    # Photo ho to Gemini vision se describe karwao (Qwen text-only hai);
+    # description memory me save hoti hai, taaki photo ke baare me baad me poochh sako
+    ext = os.path.splitext(file.filename or "")[1].lower()
+    if ext in IMAGE_EXTS:
+        desc = router.describe_image(data, IMAGE_EXTS[ext])
+        if desc:
+            save_memory(db, f"file:{file.filename}", desc[:20000])
+            return {"filename": file.filename, "chars": len(desc), "description": desc}
+        return {"filename": file.filename, "chars": 0, "description": None}
     text = extract_text_from_upload(data, file.filename or "")
     # File ka content memory me save karo taaki uske baare me poochh sako
     # (error message ho to save mat karo — sirf asli content)

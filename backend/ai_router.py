@@ -22,8 +22,10 @@ import urllib.request
 
 try:
     from google import genai
+    from google.genai import types
 except Exception:  # google-genai install na ho to bhi app chalegi
     genai = None
+    types = None
 
 from memory import content_words, get_memory, search_memories
 from security import get_api_key, get_groq_token, get_hf_token
@@ -203,6 +205,34 @@ class AIRouter:
                 resp = client.models.generate_content(
                     model=model,
                     contents=prompt,
+                )
+                text = (resp.text or "").strip()
+                if text:
+                    self._last_gemini_error = None
+                    return text
+                last_err = "empty response"
+            except Exception as e:
+                last_err = self._safe_err(e)
+        self._last_gemini_error = last_err
+        return None
+
+    def describe_image(self, data: bytes, mime: str):
+        """Photo ko Gemini se describe karwao (vision — Qwen text-only hai);
+        fail ho to None (wajah _last_gemini_error me)."""
+        client = self._get_client()
+        if client is None or types is None:
+            return None
+        last_err = None
+        for model in GEMINI_MODELS:
+            try:
+                resp = client.models.generate_content(
+                    model=model,
+                    contents=[
+                        types.Part.from_bytes(data=data, mime_type=mime),
+                        "Is photo ko detail me describe karo — Hindi/Hinglish me, "
+                        "ek friendly assistant ki tarah. Photo me kya dikh raha hai, "
+                        "kaun/kaise log ya cheezein hain, aur mahaul kaisa hai — sab batao.",
+                    ],
                 )
                 text = (resp.text or "").strip()
                 if text:
