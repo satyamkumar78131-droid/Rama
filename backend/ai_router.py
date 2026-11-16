@@ -126,6 +126,17 @@ def _needs_fresh_info(question: str) -> bool:
 class AIRouter:
     def __init__(self):
         self._client = None
+        self._last_qwen_error = None
+        self._last_gemini_error = None
+
+    @staticmethod
+    def _safe_err(e):
+        """Error ko chhota + safe rakho — token/key kabhi isme na aaye."""
+        s = str(e)[:120]
+        for secret in (get_api_key(), get_hf_token()):
+            if secret:
+                s = s.replace(secret, "***")
+        return s or type(e).__name__
 
     def _get_client(self):
         """Gemini client (lazy — key ho to hi banao)."""
@@ -142,9 +153,10 @@ class AIRouter:
         return self._client
 
     def _ask_gemini(self, prompt: str):
-        """Gemini se jawab lo; fail ho to None."""
+        """Gemini se jawab lo; fail ho to None (wajah _last_gemini_error me)."""
         client = self._get_client()
         if client is None:
+            self._last_gemini_error = "no key/client"
             return None
         try:
             resp = client.models.generate_content(
@@ -152,14 +164,21 @@ class AIRouter:
                 contents=prompt,
             )
             text = (resp.text or "").strip()
-            return text if text else None
-        except Exception:
+            if text:
+                self._last_gemini_error = None
+                return text
+            self._last_gemini_error = "empty response"
+            return None
+        except Exception as e:
+            self._last_gemini_error = self._safe_err(e)
             return None
 
     def _ask_qwen(self, prompt: str):
-        """Qwen3-4B se jawab lo (HF Inference router); fail ho ya token na ho to None."""
+        """Qwen3-4B se jawab lo (HF Inference router); fail ho ya token na ho to None
+        (wajah _last_qwen_error me)."""
         token = get_hf_token()
         if not token:
+            self._last_qwen_error = "no token"
             return None
         body = {
             "model": QWEN_MODEL,
@@ -185,8 +204,13 @@ class AIRouter:
             with urllib.request.urlopen(req, timeout=60) as resp:
                 data = json.loads(resp.read().decode())
             text = (data["choices"][0]["message"]["content"] or "").strip()
-            return text if text else None
-        except Exception:
+            if text:
+                self._last_qwen_error = None
+                return text
+            self._last_qwen_error = "empty response"
+            return None
+        except Exception as e:
+            self._last_qwen_error = self._safe_err(e)
             return None
 
     def _ask_brain(self, prompt: str):
@@ -303,4 +327,5 @@ class AIRouter:
         return {
             "answer": "Mujhe iska sahi jawab nahi pata. Dobara poochho ya kuch aur poochho!",
             "sources": [],
+            "debug": {"qwen": self._last_qwen_error, "gemini": self._last_gemini_error},
         }

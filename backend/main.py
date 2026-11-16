@@ -123,11 +123,12 @@ def chat(req: ChatRequest, db: Session = Depends(get_db)):
     answer = result.get("answer", "")
     sources = result.get("sources", [])
     brain = result.get("brain")  # 'qwen' | 'gemini' | None (local/memory/web jawab pe None)
+    debug = result.get("debug")  # sirf "nahi pata" jawab pe — brain fail hone ki wajah
 
     db.add(Message(conversation_id=conv.id, role="assistant", content=answer))
     db.commit()
 
-    return {"answer": answer, "sources": sources, "conversation_id": conv.id, "mode": mode, "brain": brain}
+    return {"answer": answer, "sources": sources, "conversation_id": conv.id, "mode": mode, "brain": brain, "debug": debug}
 
 
 @app.post("/upload")
