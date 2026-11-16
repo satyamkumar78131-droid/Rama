@@ -34,12 +34,22 @@ export default function App() {
     setMessages((prev) => [...prev, userMsg])
     setTyping(true)
     try {
-      const res = await fetch(`${API}/chat`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: text, conversation_id: conversationId, mode }),
-      })
-      const data = await res.json()
+      // Render free tier kabhi-kabhi ek request drop kar deta hai — ek baar 2s ruk ke dobara try karo
+      let res, data
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+          res = await fetch(`${API}/chat`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ message: text, conversation_id: conversationId, mode }),
+          })
+          data = await res.json()
+          break
+        } catch (e) {
+          if (attempt === 0) await new Promise((r) => setTimeout(r, 2000))
+          else throw e
+        }
+      }
       if (res.ok) {
         setMessages((prev) => [
           ...prev,
@@ -58,7 +68,7 @@ export default function App() {
         ...prev,
         {
           role: 'assistant',
-          content: 'Backend se connect nahi ho pa raha. Kya backend chal raha hai? (uvicorn main:app --reload --app-dir backend)',
+          content: 'Backend se connect nahi ho pa raha. Backend ek second ke liye band ho gaya tha — wahi message dobara bhejo, ab chal raha hoga.',
         },
       ])
     } finally {
@@ -88,8 +98,11 @@ export default function App() {
       />
       <main className="chat">
         <header className="chat-header">
-          <span className="logo">🙏 Rama</span>
-          <span className="online">● online</span>
+          <span className="logo">🙏</span>
+          <span className="title-block">
+            <span className="logo-name">Rama</span>
+            <span className="online">● online</span>
+          </span>
           <span className="mode-toggle">
             <button
               className={mode === 'fast' ? 'mode-btn active' : 'mode-btn'}
@@ -106,7 +119,7 @@ export default function App() {
           </span>
         </header>
         <MessageList messages={messages} typing={typing} />
-        <ChatInput onSend={sendMessage} disabled={typing} />
+        <ChatInput onSend={sendMessage} sending={typing} />
       </main>
     </div>
   )
