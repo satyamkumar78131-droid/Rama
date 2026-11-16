@@ -190,11 +190,15 @@ class AIRouter:
             return None
 
     def _ask_brain(self, prompt: str):
-        """Brain: pehle Qwen3-4B (HF Inference), na chale to Gemini fallback."""
+        """Brain: pehle Qwen3-4B (HF Inference), na chale to Gemini fallback.
+        Returns (answer, brain) — brain: 'qwen' | 'gemini' | None."""
         answer = self._ask_qwen(prompt)
         if answer:
-            return answer
-        return self._ask_gemini(prompt)
+            return answer, "qwen"
+        answer = self._ask_gemini(prompt)
+        if answer:
+            return answer, "gemini"
+        return None, None
 
     def answer(self, question: str, db, history=None, mode: str = "fast") -> dict:
         """Sawal ka jawab do -> {answer, sources}. mode: fast | deep."""
@@ -249,7 +253,7 @@ class AIRouter:
                     f"- {r.get('title', '')}: {r.get('snippet', '')}" for r in results[:3]
                 )
                 # Web jawab ko brain se process karwao (saaf, seedha jawab)
-                brain_answer = self._ask_brain(
+                brain_answer, brain = self._ask_brain(
                     f"{system_prompt}\n\n"
                     f"Search results:\n{web_text}\n\n"
                     f"Question: {question}\n\n"
@@ -257,7 +261,7 @@ class AIRouter:
                     "If the search results do not contain the answer, say you don't know."
                 )
                 if brain_answer:
-                    return {"answer": _clean_answer(brain_answer), "sources": sources}
+                    return {"answer": _clean_answer(brain_answer), "sources": sources, "brain": brain}
                 # Brain nahi chala to seedha web snippet do
                 first = results[0].get("snippet", "").strip()
                 if first:
@@ -282,9 +286,9 @@ class AIRouter:
             f"Question: {question}\n\n"
             "Answer in the same language as the question (Hindi/Hinglish/English)."
         )
-        brain_answer = self._ask_brain(prompt)
+        brain_answer, brain = self._ask_brain(prompt)
         if brain_answer:
-            return {"answer": _clean_answer(brain_answer), "sources": sources}
+            return {"answer": _clean_answer(brain_answer), "sources": sources, "brain": brain}
 
         # 5. Last fallback — web search ya imaandaar "nahi pata"
         if not sources:
