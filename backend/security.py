@@ -21,8 +21,14 @@ def get_api_key() -> str:
 
 
 def get_hf_token() -> str:
-    """HF_TOKEN env se lo (Hugging Face Inference — Qwen brain ke liye); na ho to empty string."""
+    """HF_TOKEN env se lo (Hugging Face Inference — PAUSED: account me inference
+    credits $0 hain, isliye HF router hamesha 400 deta hai); na ho to empty string."""
     return os.getenv("HF_TOKEN", "").strip()
+
+
+def get_groq_token() -> str:
+    """GROQ_API_KEY env se lo (Groq free tier — Qwen brain ke liye); na ho to empty string."""
+    return os.getenv("GROQ_API_KEY", "").strip()
 
 
 def check_api_key() -> bool:

@@ -6,7 +6,7 @@ Order (hamesha yahi):
 2. Personal memory pehle — saved memory jawab de (>= 2 content words
    overlap) to web search BILKUL nahi.
 3. Current/factual sawal — web_search + sources.
-4. Warna BRAIN se jawab — pehle Qwen3-4B (HF Inference, free), na chale to
+4. Warna BRAIN se jawab — pehle Qwen3.8-27B (Groq free tier), na chale to
    Gemini fallback (models ek ke baad ek try hote hain: 3.8 Flash, phir
    3.5 Flash-Lite, phir 2.5 Flash — jo mile wahi). Step by step, facts
    invent nahi karta.
@@ -26,22 +26,22 @@ except Exception:  # google-genai install na ho to bhi app chalegi
     genai = None
 
 from memory import content_words, get_memory, search_memories
-from security import get_api_key, get_hf_token
+from security import get_api_key, get_groq_token, get_hf_token
 from web_search import web_search
 
 # Gemini models, try karne ka order. gemini-2.0-flash band ho gaya hai
 # ("no longer available") — isliye naye models pehle; jo mile wahi use hoga.
 GEMINI_MODELS = ["gemini-3.8-flash", "gemini-3.5-flash-lite", "gemini-2.5-flash"]
 
-# Qwen brain — HF Inference API (router, OpenAI-compatible). Koi nayi dependency
-# nahi — sirf stdlib urllib. HF_TOKEN Render env me set ho to Qwen pehle
-# try hota hai, warna Gemini fallback.
-QWEN_MODEL = "Qwen/Qwen3-4B"
-# Qwen3-4B ko Inference Providers pe SIRF featherless-ai serve karta hai
-# (HF API se verify kiya 2026-11-16) — isliye provider pin kiya hai, taaki
-# auto-routing galat provider na chune.
-QWEN_PROVIDER = "featherless-ai"
-QWEN_ROUTER_URL = "https://router.huggingface.co/v1/chat/completions"
+# Qwen brain — Groq free tier (OpenAI-compatible). Koi nayi dependency
+# nahi — sirf stdlib urllib. GROQ_API_KEY Render env me set ho to Qwen
+# pehle try hota hai, warna Gemini fallback.
+# NOTE: HF Inference PAUSED hai — HF account me inference credits $0 hain,
+# isliye HF router hamesha HTTP 400 deta hai ("not supported by any provider
+# you have enabled"). Qwen ab Groq se chalega.
+# Groq pe Qwen3-32B band ho gaya (July 2026) — isliye qwen3.8-27b use ho raha hai.
+QWEN_MODEL = "qwen/qwen3.8-27b"
+QWEN_ROUTER_URL = "https://api.groq.com/openai/v1/chat/completions"
 QWEN_SYSTEM = (
     "You are RAMA, an intelligent, helpful AI assistant. "
     "Answer accurately in Hindi, English or Hinglish."
@@ -141,7 +141,7 @@ class AIRouter:
     def _safe_err(e):
         """Error ko chhota + safe rakho — token/key kabhi isme na aaye."""
         s = str(e)[:120]
-        for secret in (get_api_key(), get_hf_token()):
+        for secret in (get_api_key(), get_hf_token(), get_groq_token()):
             if secret:
                 s = s.replace(secret, "***")
         return s or type(e).__name__
@@ -187,15 +187,14 @@ class AIRouter:
         return None
 
     def _ask_qwen(self, prompt: str):
-        """Qwen3-4B se jawab lo (HF Inference router); fail ho ya token na ho to None
+        """Qwen3.8-27B se jawab lo (Groq free tier); fail ho ya token na ho to None
         (wajah _last_qwen_error me)."""
-        token = get_hf_token()
+        token = get_groq_token()
         if not token:
             self._last_qwen_error = "no token"
             return None
         body = {
             "model": QWEN_MODEL,
-            "provider": QWEN_PROVIDER,
             "messages": [
                 {"role": "system", "content": QWEN_SYSTEM},
                 {"role": "user", "content": prompt},
@@ -203,9 +202,9 @@ class AIRouter:
             "max_tokens": 300,
             "temperature": 0.7,
             "top_p": 0.8,
-            # NOTE: chat_template_kwargs (enable_thinking) HATA diya — kuch
-            # providers is extra field pe HTTP 400 dete hain. Qwen ka <think>
-            # block aaye to _clean_answer use hata deta hai.
+            # NOTE: Groq ko "provider" field nahi chahiye (HF router wala field
+            # tha). Qwen3.8-27B thinking model hai — <think> block aaye to
+            # _clean_answer use hata deta hai.
         }
         req = urllib.request.Request(
             QWEN_ROUTER_URL,
@@ -213,6 +212,9 @@ class AIRouter:
             headers={
                 "Authorization": f"Bearer {token}",
                 "Content-Type": "application/json",
+                # NOTE: Groq Cloudflare ke peeche hai — Python-urllib ka default
+                # User-Agent 403 (error 1010) deta hai, isliye apna UA bhejte hain.
+                "User-Agent": "RAMA/1.0",
             },
             method="POST",
         )
@@ -226,7 +228,7 @@ class AIRouter:
             self._last_qwen_error = "empty response"
             return None
         except urllib.error.HTTPError as e:
-            # HF ka error body (jaise {"error": "..."}) — asli wajah isme hoti hai
+            # Groq ka error body (jaise {"error": "..."}) — asli wajah isme hoti hai
             detail = ""
             try:
                 detail = e.read().decode()[:200]
@@ -241,7 +243,7 @@ class AIRouter:
             return None
 
     def _ask_brain(self, prompt: str):
-        """Brain: pehle Qwen3-4B (HF Inference), na chale to Gemini fallback.
+        """Brain: pehle Qwen3.8-27B (Groq free tier), na chale to Gemini fallback.
         Returns (answer, brain) — brain: 'qwen' | 'gemini' | None."""
         answer = self._ask_qwen(prompt)
         if answer:
