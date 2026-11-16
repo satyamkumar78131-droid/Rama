@@ -59,7 +59,8 @@ export default function MessageList({ messages, typing }) {
     <div className="messages">
       {messages.length === 0 && (
         <div className="empty">
-          <div className="empty-logo">🙏</div>
+          <img src="/rama-avatar.jpg" alt="Rama" className="home-avatar" />
+          <div className="home-name">Rama</div>
           <h2>Namaste! Main Rama hoon.</h2>
           <p>Kuch bhi poochho — main madad karunga. 😊</p>
           <p className="muted">Tip: "yaad rakho mera favourite colour neela hai" likh ke dekho!</p>
@@ -73,7 +74,8 @@ export default function MessageList({ messages, typing }) {
             ) : (
               <div className="responding">RAMA Responding</div>
             )}
-            <div className="bubble-text">{m.content}</div>
+            {m.image && <img src={m.image} alt="Photo" className="bubble-img" />}
+            {m.content ? <div className="bubble-text">{m.content}</div> : null}
             {m.role === 'assistant' && <Actions text={m.content} />}
             {m.sources && m.sources.length > 0 && (
               <div className="sources">
