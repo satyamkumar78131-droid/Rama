@@ -111,7 +111,12 @@ export default function MessageList({ messages, typing }) {
     <div className="messages">
       {messages.length === 0 && (
         <div className="empty">
-          <img src="/rama-avatar.jpg" alt="Rama" className="home-avatar" />
+          <div className="home-avatar-wrap">
+            <img src="/rama-avatar.jpg" alt="Rama" className="home-avatar" />
+            <span className="avatar-sparkle s1">✦</span>
+            <span className="avatar-sparkle s2">✦</span>
+            <span className="avatar-sparkle s3">✦</span>
+          </div>
           <div className="home-name">Rama</div>
           <h2>Namaste! Main Rama hoon.</h2>
           <p>Kuch bhi poochho — main madad karunga. 😊</p>
