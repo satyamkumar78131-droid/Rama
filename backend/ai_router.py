@@ -37,6 +37,10 @@ GEMINI_MODELS = ["gemini-3.8-flash", "gemini-3.5-flash-lite", "gemini-2.5-flash"
 # nahi — sirf stdlib urllib. HF_TOKEN Render env me set ho to Qwen pehle
 # try hota hai, warna Gemini fallback.
 QWEN_MODEL = "Qwen/Qwen3-4B"
+# Qwen3-4B ko Inference Providers pe SIRF featherless-ai serve karta hai
+# (HF API se verify kiya 2026-11-16) — isliye provider pin kiya hai, taaki
+# auto-routing galat provider na chune.
+QWEN_PROVIDER = "featherless-ai"
 QWEN_ROUTER_URL = "https://router.huggingface.co/v1/chat/completions"
 QWEN_SYSTEM = (
     "You are RAMA, an intelligent, helpful AI assistant. "
@@ -191,6 +195,7 @@ class AIRouter:
             return None
         body = {
             "model": QWEN_MODEL,
+            "provider": QWEN_PROVIDER,
             "messages": [
                 {"role": "system", "content": QWEN_SYSTEM},
                 {"role": "user", "content": prompt},
