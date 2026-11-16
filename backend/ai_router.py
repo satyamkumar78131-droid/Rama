@@ -141,14 +141,17 @@ class AIRouter:
     def _get_client(self):
         """Gemini client (lazy — key ho to hi banao)."""
         if genai is None:
+            self._last_gemini_error = "no genai lib"
             return None
         if self._client is None:
             key = get_api_key()
             if not key:
+                self._last_gemini_error = "no key"
                 return None
             try:
                 self._client = genai.Client(api_key=key)
-            except Exception:
+            except Exception as e:
+                self._last_gemini_error = self._safe_err(e)
                 return None
         return self._client
 
@@ -156,7 +159,6 @@ class AIRouter:
         """Gemini se jawab lo; fail ho to None (wajah _last_gemini_error me)."""
         client = self._get_client()
         if client is None:
-            self._last_gemini_error = "no key/client"
             return None
         try:
             resp = client.models.generate_content(
@@ -189,7 +191,9 @@ class AIRouter:
             "max_tokens": 300,
             "temperature": 0.7,
             "top_p": 0.8,
-            "chat_template_kwargs": {"enable_thinking": False},
+            # NOTE: chat_template_kwargs (enable_thinking) HATA diya — kuch
+            # providers is extra field pe HTTP 400 dete hain. Qwen ka <think>
+            # block aaye to _clean_answer use hata deta hai.
         }
         req = urllib.request.Request(
             QWEN_ROUTER_URL,
@@ -208,6 +212,17 @@ class AIRouter:
                 self._last_qwen_error = None
                 return text
             self._last_qwen_error = "empty response"
+            return None
+        except urllib.error.HTTPError as e:
+            # HF ka error body (jaise {"error": "..."}) — asli wajah isme hoti hai
+            detail = ""
+            try:
+                detail = e.read().decode()[:200]
+            except Exception:
+                detail = ""
+            self._last_qwen_error = self._safe_err(
+                f"HTTP Error {e.code}: {detail or e.reason}"
+            )
             return None
         except Exception as e:
             self._last_qwen_error = self._safe_err(e)
