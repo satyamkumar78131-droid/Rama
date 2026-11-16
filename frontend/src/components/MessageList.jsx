@@ -1,5 +1,57 @@
 import { useEffect, useRef, useState } from 'react'
 
+/* RAMA ke jawab me **bold** / *italic* / list aate hain — plain text me
+   ** dikhta tha. Pehle HTML escape karo (safe), phir markdown ko HTML banao. */
+function escapeHtml(s) {
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+}
+
+function mdInline(s) {
+  return s
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>')
+    .replace(/`([^`\n]+)`/g, '<code>$1</code>')
+}
+
+function mdToHtml(text) {
+  const lines = escapeHtml(text || '').split('\n')
+  let html = ''
+  let inUl = false
+  let inOl = false
+  const closeLists = () => {
+    if (inUl) { html += '</ul>'; inUl = false }
+    if (inOl) { html += '</ol>'; inOl = false }
+  }
+  for (const line of lines) {
+    const t = line.trim()
+    if (/^#{1,3}\s/.test(t)) {
+      closeLists()
+      const level = t.match(/^#+/)[0].length
+      html += `<h${level}>${mdInline(t.replace(/^#+\s*/, ''))}</h${level}>`
+      continue
+    }
+    if (/^[-*]\s+/.test(t)) {
+      if (!inUl) { closeLists(); html += '<ul>'; inUl = true }
+      html += `<li>${mdInline(t.replace(/^[-*]\s+/, ''))}</li>`
+      continue
+    }
+    if (/^\d+\.\s+/.test(t)) {
+      if (!inOl) { closeLists(); html += '<ol>'; inOl = true }
+      html += `<li>${mdInline(t.replace(/^\d+\.\s+/, ''))}</li>`
+      continue
+    }
+    if (t === '') { closeLists(); continue }
+    closeLists()
+    html += `<p>${mdInline(t)}</p>`
+  }
+  closeLists()
+  return html
+}
+
+
 /* 🔊 sunao / 📋 copy / 👍 like — har AI jawab ke neeche */
 function Actions({ text }) {
   const [liked, setLiked] = useState(false)
@@ -75,7 +127,7 @@ export default function MessageList({ messages, typing }) {
               <div className="responding">RAMA Responding</div>
             )}
             {m.image && <img src={m.image} alt="Photo" className="bubble-img" />}
-            {m.content ? <div className="bubble-text">{m.content}</div> : null}
+            {m.content ? <div className="bubble-text" dangerouslySetInnerHTML={{ __html: mdToHtml(m.content) }} /> : null}
             {m.role === 'assistant' && <Actions text={m.content} />}
             {m.sources && m.sources.length > 0 && (
               <div className="sources">
