@@ -585,3 +585,220 @@ body {
   color: #667085;
   letter-spacing: 1px;
 }
+
+/* ---------- Video editor (CapCut-style, light theme) ---------- */
+.video-editor { display: flex; flex-direction: column; gap: 14px; }
+
+.ve-note { font-size: 13px; color: #667085; }
+
+.ve-section {
+  background: rgba(255, 255, 255, 0.6);
+  border: 1px solid rgba(0, 0, 0, 0.05);
+  border-radius: 12px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ve-section h3 { font-size: 15px; color: #111; }
+
+.ve-preview-wrap {
+  position: relative;
+  background: #000;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.ve-preview-wrap video {
+  width: 100%;
+  max-height: 55vh;
+  display: block;
+  background: #000;
+}
+
+.ve-text-overlay {
+  position: absolute;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: #fff;
+  font-weight: 700;
+  text-align: center;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9), 0 0 2px rgba(0, 0, 0, 0.8);
+  pointer-events: none;
+  white-space: pre-wrap;
+  max-width: 92%;
+  word-break: break-word;
+}
+
+.ve-text-overlay.pos-top { top: 12%; }
+.ve-text-overlay.pos-center { top: 50%; }
+.ve-text-overlay.pos-bottom { top: 88%; }
+
+.ve-play-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+.ve-play-btn {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  border: none;
+  background: #075e54;
+  color: #fff;
+  font-size: 20px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.ve-time { font-size: 14px; color: #333; font-variant-numeric: tabular-nums; }
+
+.ve-timeline {
+  position: relative;
+  height: 48px;
+  background: #e8e6df;
+  border-radius: 8px;
+  overflow: hidden;
+  touch-action: none;
+  cursor: pointer;
+}
+
+.ve-seg {
+  position: absolute;
+  top: 6px;
+  bottom: 6px;
+  background: #00a884;
+  border-radius: 4px;
+  opacity: 0.9;
+}
+
+.ve-playhead {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: #d32f2f;
+  z-index: 2;
+}
+
+.ve-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 16px;
+  background: rgba(7, 94, 84, 0.85);
+  z-index: 3;
+  cursor: ew-resize;
+  touch-action: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 10px;
+}
+
+.ve-handle.left { border-radius: 8px 0 0 8px; }
+.ve-handle.right { border-radius: 0 8px 8px 0; }
+
+.ve-slider-row { display: flex; flex-direction: column; gap: 4px; }
+.ve-slider-row label { font-size: 13px; color: #333; }
+.ve-slider-row input[type='range'] { width: 100%; accent-color: #00a884; height: 28px; }
+
+.ve-seg-list { display: flex; flex-direction: column; gap: 6px; }
+
+.ve-seg-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid rgba(0, 0, 0, 0.05);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 14px;
+}
+
+.ve-seg-del {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: none;
+  background: #fdecea;
+  color: #d32f2f;
+  font-size: 16px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.ve-btn-row { display: flex; flex-wrap: wrap; gap: 8px; }
+
+.ve-btn {
+  min-height: 44px;
+  padding: 10px 16px;
+  border-radius: 12px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  background: rgba(255, 255, 255, 0.95);
+  color: #111;
+  font-size: 15px;
+  cursor: pointer;
+}
+
+.ve-btn.active { background: #00a884; border-color: #00a884; color: #fff; }
+.ve-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.ve-text-input {
+  width: 100%;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 16px;
+  background: #fff;
+  color: #111;
+}
+
+.ve-export-btn {
+  width: 100%;
+  min-height: 50px;
+  background: #00a884;
+  color: #fff;
+  border: none;
+  border-radius: 12px;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.ve-export-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.ve-ask-btn {
+  width: 100%;
+  min-height: 50px;
+  background: #1e88e5;
+  color: #fff;
+  border: none;
+  border-radius: 12px;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.ve-ask-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.ve-status {
+  font-size: 14px;
+  color: #333;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(0, 0, 0, 0.05);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+
+/* ---------- Chat bubble markdown (RAMA ke jawab: **bold**, list, heading) ---------- */
+.bubble-text p { margin: 0 0 8px; }
+.bubble-text p:last-child { margin-bottom: 0; }
+.bubble-text ul, .bubble-text ol { margin: 0 0 8px; padding-left: 20px; }
+.bubble-text li { margin-bottom: 4px; }
+.bubble-text h1, .bubble-text h2, .bubble-text h3 { margin: 10px 0 6px; font-size: 16px; }
+.bubble-text code {
+  background: rgba(0, 0, 0, 0.08);
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 13px;
+}

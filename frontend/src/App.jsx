@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import MessageList from './components/MessageList.jsx'
 import ChatInput from './components/ChatInput.jsx'
 import Sidebar from './components/Sidebar.jsx'
+import VideoEditor from './components/VideoEditor.jsx'
 
 // Vercel pe VITE_API_BASE_URL set karo (Render backend URL), local me localhost:8000
 const API = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
@@ -16,6 +17,7 @@ const IDEAS = [
 
 const TABS = [
   { id: 'chat', icon: '💬', label: 'Chat' },
+  { id: 'video', icon: '🎬', label: 'Video' },
   { id: 'chats', icon: '📰', label: 'Chats' },
   { id: 'ideas', icon: '💡', label: 'Ideas' },
   { id: 'memory', icon: '☑', label: 'Memory' },
@@ -37,7 +39,7 @@ export default function App() {
   const [memories, setMemories] = useState([])
   const [typing, setTyping] = useState(false)
   const [mode, setMode] = useState('fast') // fast | deep
-  const [tab, setTab] = useState('chat') // chat | chats | ideas | memory | more
+  const [tab, setTab] = useState('chat') // chat | video | chats | ideas | memory | more
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [splash, setSplash] = useState(true) // SAIME-style startup animation, "RAMA" text
   const [splashLeaving, setSplashLeaving] = useState(false)
@@ -336,6 +338,10 @@ export default function App() {
             <MessageList messages={messages} typing={typing} />
             <ChatInput onSend={sendMessage} sending={typing} onFile={handleFile} />
           </>
+        )}
+
+        {tab === 'video' && (
+          <VideoEditor api={API} onSendMessage={sendMessage} onGoToChat={() => setTab('chat')} />
         )}
 
         {tab === 'chats' && (
