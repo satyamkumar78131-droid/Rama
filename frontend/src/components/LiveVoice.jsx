@@ -27,6 +27,24 @@ export default function LiveVoice({ api, onSend, onClose }) {
   const intentionalStopRef = useRef(false)
   const restartTimerRef = useRef(null)
   const processingRef = useRef(false)
+  const voicesRef = useRef([])
+
+  /* ---------- Awaaz ki voices: Android pe der se load hoti hain ---------- */
+  function loadVoices() {
+    try {
+      const vs = window.speechSynthesis.getVoices() || []
+      if (vs.length) voicesRef.current = vs
+      return vs
+    } catch (e) { return [] }
+  }
+
+  useEffect(() => {
+    loadVoices()
+    const onVoices = () => loadVoices()
+    try { window.speechSynthesis?.addEventListener('voiceschanged', onVoices) } catch (e) { /* ignore */ }
+    return () => { try { window.speechSynthesis?.removeEventListener('voiceschanged', onVoices) } catch (e) { /* ignore */ } }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   function setPhaseBoth(p) {
     phaseRef.current = p
@@ -59,26 +77,81 @@ export default function LiveVoice({ api, onSend, onClose }) {
     onClose()
   }
 
-  /* ---------- Jawab bolna (hi-IN voice, rate 1.0) ---------- */
+  /* ---------- Jawab bolna (hi-IN voice, rate 1.0) ----------
+     Android Chrome pe lamba text ek saath bolne pe awaaz hi nahi aati —
+     isliye jawab ko chhote tukdon me bolte hain, ek ke baad ek.
+     Agar onend/onerror na aaye to watchdog aage badha deta hai (loop atakega nahi). */
+  function splitSentences(text) {
+    const parts = String(text).replace(/\*\*/g, '').split(/(?<=[.!?।\n])\s+/)
+    const chunks = []
+    for (const p of parts) {
+      const t = p.trim()
+      if (!t) continue
+      if (t.length <= 160) { chunks.push(t); continue }
+      const words = t.split(/\s+/)
+      let cur = ''
+      for (const w of words) {
+        if ((cur + ' ' + w).trim().length > 160 && cur) { chunks.push(cur.trim()); cur = w }
+        else cur = (cur + ' ' + w).trim()
+      }
+      if (cur) chunks.push(cur.trim())
+    }
+    return chunks.length ? chunks : [String(text)]
+  }
+
+  function pickVoice() {
+    const voices = voicesRef.current.length ? voicesRef.current : loadVoices()
+    const hi = voices.find((v) => v.lang && v.lang.toLowerCase().startsWith('hi'))
+    if (hi) return hi
+    // Hindi voice phone me installed nahi hai to default voice se bolo — khamoshi se behtar
+    return voices.length ? voices[0] : null
+  }
+
   function speak(text, after) {
     if (!ttsSupported || !text) { if (after) after(); return }
-    try {
-      window.speechSynthesis.cancel()
-      const u = new SpeechSynthesisUtterance(text)
-      u.lang = 'hi-IN'
-      u.rate = 1.0
-      const voices = window.speechSynthesis.getVoices() || []
-      const hi = voices.find((v) => v.lang && v.lang.toLowerCase().startsWith('hi'))
-      if (hi) u.voice = hi
-      u.onend = () => { if (after) after() }
-      u.onerror = () => { if (after) after() }
-      setTimeout(() => {
-        if (stoppedRef.current) return
-        try { window.speechSynthesis.speak(u) } catch (e) { if (after) after() }
-      }, 80)
-    } catch (e) {
-      if (after) after()
+    const chunks = splitSentences(text)
+    let idx = 0
+    let done = false
+    const finish = () => { if (!done) { done = true; if (after) after() } }
+    const speakChunk = () => {
+      if (stoppedRef.current) { finish(); return }
+      if (idx >= chunks.length) { finish(); return }
+      const part = chunks[idx++]
+      try {
+        const u = new SpeechSynthesisUtterance(part)
+        u.lang = 'hi-IN'
+        u.rate = 1.0
+        const v = pickVoice()
+        if (v) u.voice = v
+        let advanced = false
+        let watchdog = null
+        const next = () => {
+          if (advanced) return
+          advanced = true
+          if (watchdog) clearTimeout(watchdog)
+          setTimeout(speakChunk, 60)
+        }
+        watchdog = setTimeout(next, Math.max(5000, part.length * 120))
+        u.onend = next
+        u.onerror = next
+        window.speechSynthesis.speak(u)
+      } catch (e) {
+        finish()
+      }
     }
+    try { window.speechSynthesis.cancel() } catch (e) { /* ignore */ }
+    // Voices abhi load nahi hui to thoda ruko, phir bolo
+    if (!voicesRef.current.length && !loadVoices().length) {
+      setTimeout(speakChunk, 600)
+    } else {
+      setTimeout(speakChunk, 80)
+    }
+  }
+
+  /* ---------- Awaaz test: ek chhoti line bol kar dikhao ---------- */
+  function testVoice() {
+    setError('')
+    speak('Namaste, main Rama hoon. Kya tum mujhe sun pa rahe ho?', null)
   }
 
   /* ---------- Sunna shuru karo (loop ka ek round) ---------- */
@@ -257,6 +330,7 @@ export default function LiveVoice({ api, onSend, onClose }) {
         <>
           <p className="live-intro">Mic dabao, bolo — RAMA bol kar jawab dega. Baat khatm karne ke liye 📞 Band karo dabao.</p>
           <button type="button" className="live-start-btn" onClick={startLive}>🎙️ Live shuru karo</button>
+          <button type="button" className="live-retry-btn" onClick={testVoice}>🔊 Awaaz check karo</button>
         </>
       ) : (
         <>
@@ -277,6 +351,7 @@ export default function LiveVoice({ api, onSend, onClose }) {
             <button type="button" className="live-mute" onClick={toggleMute}>
               {muted ? '🎤 Unmute' : '🔇 Mute'}
             </button>
+            <button type="button" className="live-retry-btn" onClick={testVoice}>🔊 Awaaz check</button>
           </div>
         </>
       )}
