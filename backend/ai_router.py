@@ -98,13 +98,24 @@ def _is_user_name_question(question: str) -> bool:
 
 
 def _is_ai_name_question(question: str) -> bool:
-    """AI ka naam poochh raha hai? ("tumhara naam kya hai" / "what is your name")"""
+    """AI ka naam/pehchan poochh raha hai? ("tumhara naam kya hai" / "what is your name" / "who are you")"""
     low = question.lower()
     return bool(
         re.search(r"tumhara\s+naa?m\s+kya", low)
         or re.search(r"aapka\s+naa?m\s+kya", low)
         or re.search(r"what\s+is\s+your\s+name", low)
         or re.search(r"what'?s\s+your\s+name", low)
+        # "who are you" — sirf jab uske baad sawal khatm ho (punctuation/end),
+        # warna "who are you talking about" galat pakda jayega
+        or re.search(r"who\s+are\s+you\s*(?:[?.!]|$)", low)
+        or re.search(r"\bwho\s+r\s+(u|you)\b", low)
+        or re.search(r"what\s+are\s+you\s*(?:[?.!]|$)", low)
+        or re.search(r"introduce\s+yourself\b", low)
+        or re.search(r"tum\s+kaun\s+(ho|hai|hain)\b", low)
+        or re.search(r"aap\s+kaun\s+(ho|hain)\b", low)
+        or re.search(r"tu\s+kaun\s+hai\b", low)
+        or re.search(r"tum\s+kya\s+ho\s*(?:[?.!]|$)", low)
+        or re.search(r"apna\s+naam\s+batao\b", low)
     )
 
 
